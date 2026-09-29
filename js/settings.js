@@ -11,7 +11,18 @@ export const DEFAULTS = Object.freeze({
   haptics: true,      // vibrazione al tocco, dove il browser lo consente
   meter: true,        // indicatore livello microfono
   externalAudio: false, // true = l'audio lo registra un'altra app (es. Memo Vocali): solo timeline
+  transcribe: true,   // trascrizione in diretta con il riconoscimento vocale del browser
+  lang: 'it-IT',      // lingua della trascrizione
 });
+
+export const LANGUAGES = [
+  ['it-IT', 'Italiano'],
+  ['en-GB', 'English (UK)'],
+  ['en-US', 'English (US)'],
+  ['fr-FR', 'Français'],
+  ['de-DE', 'Deutsch'],
+  ['es-ES', 'Español'],
+];
 
 export function getSettings() {
   try {

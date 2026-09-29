@@ -4,7 +4,7 @@ import { h, toast, openModal, confirmDialog, promptDialog } from '../ui.js';
 import * as db from '../db.js';
 import { getPartBlob, verifyMeetingAudio } from '../audio.js';
 import {
-  buildSegments, sortEvents, talkTime, driftCheck, applyShifts, meetingEnd, partGaps,
+  buildSegments, sortEvents, talkTime, driftCheck, applyShifts, meetingEnd, partGaps, transcriptItems,
 } from '../timeline.js';
 import {
   fmtTime, fmtTimePrecise, fmtClock, fmtDuration, fmtDateTime, fmtBytes, parseTime, uid, textColorFor, nextColor,
@@ -22,6 +22,8 @@ export async function renderEdit(root, id) {
   let events = await db.getEvents(id);
   let verifying = false;
   let showSys = events.some((e) => e.type === 'sys' && NOTABLE_SYS.has(e.kind) && e.kind !== 'part-start');
+  let showText = true;
+  let speechSpeaker = new Map(); // id frase → speaker attribuito
 
   const player = createPlayer(meeting);
   const top = h('div', {});
@@ -46,15 +48,23 @@ export async function renderEdit(root, id) {
         `${fmtDateTime(meeting.startedAt || meeting.createdAt)} · durata ${fmtTime(end)} · ${turns} interventi`),
       audioStatus());
     const info = speakerInfo(sorted, end);
+    speechSpeaker = new Map(transcriptItems(events, segs).map((it) => [it.id, it.speakerId]));
+    const hasSpeech = speechSpeaker.size > 0;
+    const visible = (e) => (e.type === 'sys' ? showSys && NOTABLE_SYS.has(e.kind) : e.type !== 'speech' || showText);
     rest.replaceChildren(
       h('div', { class: 'toolbar' },
         h('button', { type: 'button', class: 'btn small secondary', onclick: () => editEvent(null) }, '＋ Evento'),
         h('button', { type: 'button', class: 'btn small secondary', onclick: () => shiftDialog() }, '⇆ Sposta tempi'),
+        hasSpeech ? h('label', { class: 'check small' },
+          h('input', { type: 'checkbox', checked: showText, onchange: (e) => { showText = e.target.checked; render(); } }),
+          h('span', {}, 'testo')) : null,
         h('label', { class: 'check small' },
           h('input', { type: 'checkbox', checked: showSys, onchange: (e) => { showSys = e.target.checked; render(); } }),
           h('span', {}, 'eventi tecnici'))),
-      h('p', { class: 'muted small' }, 'Tocca un evento per cambiare persona o tempo. ▶ ascolta da un secondo prima.'),
-      h('ul', { class: 'events' }, sorted.filter((e) => e.type !== 'sys' || (showSys && NOTABLE_SYS.has(e.kind))).map((e) => eventRow(e, info))),
+      h('p', { class: 'muted small' }, hasSpeech
+        ? 'Tocca un evento per cambiare persona o tempo, una frase per correggerne il testo. ▶ ascolta da un secondo prima.'
+        : 'Tocca un evento per cambiare persona o tempo. ▶ ascolta da un secondo prima.'),
+      h('ul', { class: 'events' }, sorted.filter(visible).map((e) => eventRow(e, info))),
       participantsCard(segs),
       h('div', { class: 'sticky-bottom' }, h('a', { class: 'btn primary xl', href: `#/export/${id}` }, 'Esporta i file ›')));
   }
@@ -147,6 +157,15 @@ export async function renderEdit(root, id) {
     const play = player.el
       ? h('button', { type: 'button', class: 'ev-play', 'aria-label': `Ascolta da ${fmtTime(e.t)}`, onclick: () => player.seek(e.t) }, '▶')
       : null;
+    if (e.type === 'speech') {
+      const p = partOf(speechSpeaker.get(e.id));
+      return h('li', { class: 'ev ev-speech' },
+        h('button', { type: 'button', class: 'ev-time', onclick: () => editSpeech(e) }, fmtTime(e.t)),
+        h('button', { type: 'button', class: 'ev-body', onclick: () => editSpeech(e) },
+          h('span', { class: 'ev-dot', style: { background: p?.color ?? '#888' } }),
+          h('span', {}, e.text)),
+        play);
+    }
     let content;
     if (e.type === 'speaker') {
       const p = partOf(e.speakerId);
@@ -179,6 +198,36 @@ export async function renderEdit(root, id) {
         events = [...events, ev];
         render();
       },
+    });
+  }
+
+  // Correzione del testo di una frase trascritta
+  function editSpeech(ev) {
+    const text = h('textarea', { rows: 5 });
+    text.value = ev.text || '';
+    const who = partOf(speechSpeaker.get(ev.id));
+    openModal({
+      title: `Frase a ${fmtTime(ev.t)}${who ? ` · ${who.name}` : ''}`,
+      body: h('div', { class: 'edit-form' },
+        h('p', { class: 'muted small' }, 'Testo riconosciuto in diretta. La persona dipende dai tocchi: per cambiarla modifica i cambi di speaker.'),
+        text),
+      actions: [
+        { label: 'Elimina', class: 'danger', onClick: async () => { await removeEvent(ev); return true; } },
+        { label: 'Annulla', value: null, class: 'secondary' },
+        {
+          label: 'Salva',
+          class: 'primary',
+          onClick: async () => {
+            const v = text.value.trim();
+            if (!v) { await removeEvent(ev); return true; }
+            const saved = { ...ev, text: v, updatedAt: Date.now(), edited: true };
+            await db.putEvent(saved);
+            events = events.map((x) => (x.id === saved.id ? saved : x));
+            render();
+            return true;
+          },
+        },
+      ],
     });
   }
 

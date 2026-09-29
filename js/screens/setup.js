@@ -2,8 +2,9 @@
 
 import { h, toast, openModal, promptDialog } from '../ui.js';
 import { session } from '../session.js';
-import { getSettings, saveSettings, getRecentNames, rememberNames } from '../settings.js';
+import { getSettings, saveSettings, getRecentNames, rememberNames, LANGUAGES } from '../settings.js';
 import { uid, nextColor, splitNames, fmtDateTime, PALETTE } from '../util.js';
+import { transcriptionSupport } from '../transcriber.js';
 
 export function renderSetup(root) {
   const participants = [];
@@ -112,10 +113,31 @@ export function renderSetup(root) {
       h('div', { class: 'add-row' }, nameInput, h('button', { type: 'button', class: 'btn secondary', onclick: addFromInput }, 'Aggiungi')),
       list,
       recentBox),
+    transcriptionCard(),
     settingsPanel(),
     h('div', { class: 'sticky-bottom' },
       startBtn,
       h('p', { class: 'muted small center' }, 'Prima riunione importante? Fai prima la prova in ', h('a', { href: '#/diagnostica' }, 'Diagnostica'), '.'))));
+}
+
+// Trascrizione in diretta: in vista, perché cambia il risultato (testo nei file esportati)
+function transcriptionCard() {
+  const s = getSettings();
+  const support = transcriptionSupport();
+  return h('div', { class: `card small ${support.ok ? '' : 'card-warn'}` },
+    h('label', { class: 'check' },
+      h('input', {
+        type: 'checkbox', checked: support.ok && s.transcribe, disabled: !support.ok,
+        onchange: (e) => saveSettings({ transcribe: e.target.checked }),
+      }),
+      h('span', {}, h('strong', {}, '📝 Trascrizione in diretta'),
+        ' — il testo di chi parla compare sullo schermo e finisce nei file esportati.')),
+    support.ok
+      ? h('p', { class: 'muted' }, 'Usa il riconoscimento vocale del telefono (lo stesso della dettatura: può passare dai server Apple). '
+        + 'Il testo è approssimativo; l\'audio resta la fonte affidabile. Lingua: ',
+      h('select', { class: 'inline-select', onchange: (e) => saveSettings({ lang: e.target.value }) },
+        LANGUAGES.map(([v, label]) => h('option', { value: v, selected: s.lang === v }, label))))
+      : h('p', {}, support.reason, ' L\'audio viene registrato comunque e il testo si può ottenere dopo, dando l\'audio a un\'AI.'));
 }
 
 function settingsPanel() {

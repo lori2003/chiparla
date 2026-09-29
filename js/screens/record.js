@@ -7,6 +7,7 @@ import { session, finalizeInterrupted } from '../session.js';
 import { haptic } from '../haptics.js';
 import { fmtTime, fmtClock, fmtDuration, textColorFor } from '../util.js';
 import { sortEvents } from '../timeline.js';
+import { STATE_TEXT } from '../transcriber.js';
 
 const ACTION_LABEL = {
   resume: 'Riprendi',
@@ -24,12 +25,19 @@ export async function renderRecord(root, id) {
   const statusEl = h('div', { class: 'rec-status' }, h('span', { class: 'rec-dot' }), labelEl);
   const saveEl = h('span', {});
   const wakeEl = h('span', {});
-  const meterFill = h('span', { class: 'meter-fill' });
-  const healthEl = h('div', { class: 'rec-health' }, saveEl, wakeEl, h('span', { class: 'meter', title: 'Livello microfono' }, meterFill));
+  const healthEl = h('div', { class: 'rec-health' }, saveEl, wakeEl);
+  // Barra del livello del microfono: si muove quando qualcuno parla
+  const micFill = h('span', { class: 'mic-fill' });
+  const micBar = h('div', { class: 'mic-bar', title: 'Livello del microfono' }, micFill);
   const warnEl = h('div', { class: 'rec-warnings' });
   const currentName = h('strong', {}, '');
   const currentSince = h('span', { class: 'rec-since' }, '');
   const currentEl = h('div', { class: 'rec-current' }, h('small', {}, 'Sta parlando'), currentName, currentSince);
+  // Testo in diretta: la prova visibile che il telefono sta sentendo le voci
+  const liveState = h('span', { class: 'live-state' }, '');
+  const liveBody = h('p', { class: 'live-body' });
+  const liveEl = h('div', { class: 'live-text', 'aria-live': 'polite' },
+    h('div', { class: 'live-head' }, h('span', {}, '📝 Testo in diretta'), liveState), liveBody);
   const grid = h('div', { class: 'speaker-grid' });
   let gridCount = -1;
 
@@ -98,9 +106,11 @@ export async function renderRecord(root, id) {
 
   root.replaceChildren(h('div', { class: 'rec-screen' },
     h('div', { class: 'rec-top' }, statusEl, timerEl, addBtn),
+    micBar,
     healthEl,
     warnEl,
     currentEl,
+    liveEl,
     grid,
     h('div', { class: 'rec-actions' }, undoBtn, noteBtn, markBtn, stopBtn)));
 
@@ -152,6 +162,50 @@ export async function renderRecord(root, id) {
     labelEl.textContent = { starting: 'AVVIO', recording: 'REC', interrupted: 'FERMO', stopping: 'SALVO…' }[st] ?? st;
 
     renderWarnings();
+    renderLive();
+  }
+
+  // Chi aveva la parola in un certo istante (ultimo tocco prima di quel momento)
+  function speakerAtTime(t) {
+    let id = null;
+    for (const e of sortEvents(session.events.filter((x) => x.type === 'speaker'))) {
+      if (e.t <= t) id = e.speakerId; else break;
+    }
+    return session.meeting.participants.find((p) => p.id === id) ?? null;
+  }
+
+  // Ultima frase riconosciuta (con chi la stava dicendo) + testo provvisorio in corso
+  function renderLive() {
+    if (!session.active) return;
+    const t = session.transcriber;
+    liveEl.classList.toggle('off', !t);
+    if (!t) {
+      liveState.textContent = '';
+      liveBody.replaceChildren(h('span', { class: 'live-muted' },
+        `Non attivo: ${session.transcribeInfo ?? 'spento'}. L'audio viene registrato comunque.`));
+      return;
+    }
+    liveState.textContent = STATE_TEXT[t.state] ?? t.state;
+    liveState.classList.toggle('on', t.active);
+    const speech = session.events.filter((e) => e.type === 'speech');
+    const last = speech[speech.length - 1];
+    const interim = session.interim;
+    if (!last && !interim) {
+      liveBody.replaceChildren(h('span', { class: 'live-muted' }, t.active
+        ? 'In ascolto… qui compare il testo di chi parla.'
+        : (t.reason || 'In pausa: tocca un nome per riattivarla.')));
+      return;
+    }
+    // si mostra la parte finale del testo, quella appena detta
+    const room = Math.max(40, 150 - interim.length);
+    let finalText = last ? last.text : '';
+    if (finalText.length > room) finalText = `…${finalText.slice(-room)}`;
+    const who = last ? speakerAtTime((last.t + (last.end ?? last.t)) / 2) : null;
+    liveBody.replaceChildren(...[
+      who ? h('span', { class: 'live-who', style: { '--c': who.color } }, `${who.name}: `) : null,
+      finalText ? h('span', { class: 'live-final' }, `${finalText} `) : null,
+      interim ? h('span', { class: 'live-interim' }, interim) : null,
+    ].filter(Boolean));
   }
 
   // Gli avvisi restano gli stessi elementi finché esistono: se ne aggiorna solo il testo
@@ -201,22 +255,25 @@ export async function renderRecord(root, id) {
         ? `💾 salvato ${Math.max(0, Math.round((now - session.lastChunkAt) / 1000))} s fa`
         : (session.status === 'recording' ? '💾 in attesa del primo salvataggio' : '💾 —');
     }
-    meterFill.parentElement.hidden = !session.meter;
+    micBar.hidden = !session.meter;
     wakeEl.textContent = session.wake.active ? '☀ schermo acceso' : '☾ schermo non bloccato';
     wakeEl.classList.toggle('bad', !session.wake.active);
+    session.meter?.sample(); // livello aggiornato 4 volte al secondo
     const lvl = session.meter?.level ?? 0;
     const pct = lvl > 0 ? Math.min(100, Math.max(0, ((20 * Math.log10(lvl) + 60) / 50) * 100)) : 0;
-    meterFill.style.width = `${pct}%`;
+    micFill.style.width = `${pct}%`;
   }
 
   buildGrid();
   update();
   tick();
   session.addEventListener('change', update);
+  session.addEventListener('transcript', renderLive);
   const timer = setInterval(tick, 250);
   return () => {
     clearInterval(timer);
     session.removeEventListener('change', update);
+    session.removeEventListener('transcript', renderLive);
     document.body.classList.remove('recording');
   };
 }

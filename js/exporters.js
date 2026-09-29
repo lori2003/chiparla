@@ -3,6 +3,7 @@
 
 import {
   buildSegments, talkTime, sortEvents, speakerAt, partGaps, hiddenIntervals, driftCheck, meetingEnd, effectiveParts,
+  transcriptItems, segmentTexts,
 } from './timeline.js';
 import {
   fmtTime, fmtClock, fmtDuration, fmtDateTime, round1, slugify, pad2, baseMime, extForMime,
@@ -56,14 +57,27 @@ export function buildModel(meeting, events, { version = '', generatedAt = Date.n
   const nameOf = (id) => (id == null ? null : names.get(id) ?? '(sconosciuto)');
   const segs = buildSegments(events, { endSec, parts });
   const partAt = (t) => parts.find((p) => p.startSec <= t && t < (p.endSec ?? endSec)) ?? null;
+  const items = transcriptItems(events, segs);
+  const texts = segmentTexts(segs, items);
 
-  const segments = segs.map((s) => ({
+  const segments = segs.map((s, i) => ({
     speaker: nameOf(s.speakerId),
     start_seconds: round1(s.start),
     end_seconds: round1(s.end),
     start: fmtTime(s.start),
     end: fmtTime(s.end),
     audio_part: s.part,
+    text: texts[i],
+  }));
+
+  // Trascrizione frase per frase (automatica, approssimativa)
+  const transcript = items.map((it) => ({
+    speaker: nameOf(it.speakerId),
+    start_seconds: round1(it.start),
+    end_seconds: round1(it.end),
+    start: fmtTime(it.start),
+    end: fmtTime(it.end),
+    text: it.text,
   }));
 
   const sorted = sortEvents(events);
@@ -95,6 +109,7 @@ export function buildModel(meeting, events, { version = '', generatedAt = Date.n
     parts,
     segs,
     segments,
+    transcript,
     notes: sorted.filter((e) => e.type === 'note').map(point),
     highlights: sorted.filter((e) => e.type === 'mark').map(point),
     audioFiles,
@@ -124,8 +139,13 @@ export function toJSON(model) {
     },
     participants: (m.participants ?? []).map((p) => ({ name: p.name, color: p.color })),
     audio_files: model.audioFiles,
-    // Formato richiesto: un elemento per ogni intervento (audio_part: file audio di riferimento)
+    // Formato richiesto: un elemento per ogni intervento (audio_part: file audio di riferimento,
+    // text: testo riconosciuto in diretta, approssimativo)
     segments: model.segments,
+    transcript: model.transcript,
+    transcript_source: model.transcript.length
+      ? 'Riconoscimento vocale del browser in tempo reale (Web Speech API): automatico e approssimativo'
+      : null,
     notes: model.notes,
     highlights: model.highlights,
     talk_time: model.talk.map((t) => ({
@@ -158,7 +178,7 @@ export function csvCell(v) {
 export function toCSV(model) {
   const rows = [];
   for (const s of model.segments) {
-    rows.push({ t: s.start_seconds, o: 0, cells: ['segment', s.speaker ?? '', s.start, s.end, s.start_seconds, s.end_seconds, round1(s.end_seconds - s.start_seconds), s.audio_part ?? '', ''] });
+    rows.push({ t: s.start_seconds, o: 0, cells: ['segment', s.speaker ?? '', s.start, s.end, s.start_seconds, s.end_seconds, round1(s.end_seconds - s.start_seconds), s.audio_part ?? '', s.text] });
   }
   for (const [type, list, o] of [['highlight', model.highlights, 1], ['note', model.notes, 2]]) {
     for (const n of list) rows.push({ t: n.time_seconds, o, cells: [type, n.speaker ?? '', n.time, '', n.time_seconds, '', '', n.audio_part ?? '', n.text] });
@@ -190,10 +210,11 @@ export function toTXT(model) {
     last = e.speakerId;
     L.push(`${fmtTime(e.t)} — ${model.nameOf(e.speakerId)}`);
   }
-  L.push('', 'INTERVENTI');
+  L.push('', model.transcript.length ? 'INTERVENTI (con il testo riconosciuto in diretta, approssimativo)' : 'INTERVENTI');
   for (const s of model.segments) {
     const label = s.audio_part === null ? `${who(s.speaker)} [audio non registrato]` : who(s.speaker);
     L.push(`${s.start} → ${s.end} | ${label}`);
+    if (s.text) L.push(`    ${s.text}`);
   }
   if (model.highlights.length) {
     L.push('', 'MOMENTI IMPORTANTI');
@@ -231,10 +252,11 @@ export function toMarkdown(model) {
   const m = model.meeting;
   const files = model.audioFiles;
   const multi = files.length > 1;
+  const hasText = model.transcript.length > 0;
   const L = [];
 
   L.push(`# Riunione: ${mdEsc(m.title)}`, '');
-  L.push('> Documento generato da ChiParla. Contiene la **timeline degli interventi** (chi parlava e quando), segnata a mano in tempo reale toccando il nome di chi prendeva la parola, più note e momenti importanti. Va usato insieme al file audio della stessa riunione.', '');
+  L.push(`> Documento generato da ChiParla. Contiene la **timeline degli interventi** (chi parlava e quando), segnata a mano in tempo reale toccando il nome di chi prendeva la parola, ${hasText ? 'la **trascrizione automatica** fatta in diretta, ' : ''}più note e momenti importanti. Va usato insieme al file audio della stessa riunione.`, '');
 
   L.push('## Informazioni', '');
   L.push(`- **Inizio:** ${m.startedAt ? fmtDateTime(m.startedAt) : '—'}`);
@@ -254,7 +276,9 @@ export function toMarkdown(model) {
   L.push('');
 
   L.push("## Istruzioni per l'AI", '');
-  L.push("1. Trascrivi l'audio della riunione.");
+  L.push(hasText
+    ? "1. Più sotto c'è una trascrizione automatica fatta in diretta dal riconoscimento vocale del telefono: è **approssimativa** (parole mancanti o sbagliate, frasi attribuite con qualche secondo di ritardo). Se hai anche l'audio, trascrivilo di nuovo con attenzione e usa questa trascrizione solo come riferimento; se non hai l'audio, lavora su questa correggendo gli errori evidenti."
+    : "1. Trascrivi l'audio della riunione.");
   L.push('2. Usa la timeline qui sotto per attribuire ogni frase a chi parla: in ogni intervallo aveva la parola la persona indicata.');
   L.push('3. I tempi sono stati segnati a mano in tempo reale, quindi di solito sono **in ritardo di 1-3 secondi** rispetto al vero cambio di voce: se senti il cambio di voce poco prima del tempo indicato, sposta il confine sul cambio di voce ma mantieni l\'attribuzione della timeline.');
   L.push('4. Se dentro un intervallo si sente brevemente un\'altra voce (interruzioni, battute), attribuiscila solo se è chiaro chi parla; altrimenti scrivi [voce non identificata]. Non inventare nomi né contenuti; dove l\'audio non si capisce scrivi [incomprensibile].');
@@ -262,6 +286,16 @@ export function toMarkdown(model) {
   L.push("6. Poi produci: (a) trascrizione con i nomi; (b) sintesi; (c) decisioni prese; (d) azioni da fare con responsabile e scadenza, se dette; (e) punti aperti; (f) per ogni momento importante, che cosa è stato detto.");
   if (multi) L.push(`7. L'audio è diviso in ${files.length} file: per ognuno trovi più sotto una timeline con i tempi relativi all'inizio di quel file.`);
   L.push('');
+
+  if (hasText) {
+    L.push('## Trascrizione automatica (approssimativa)', '');
+    L.push('_Riconoscimento vocale del telefono in tempo reale; ogni blocco è un intervento, attribuito secondo i tocchi sui nomi._', '');
+    for (const s of model.segments) {
+      if (!s.speaker && !s.text) continue;
+      const missing = s.audio_part === null ? '_(audio non registrato)_' : '_(nessun testo riconosciuto)_';
+      L.push(`**[${s.start}] ${mdEsc(who(s.speaker))}:** ${s.text ? mdEsc(s.text) : missing}`, '');
+    }
+  }
 
   if (!multi) {
     L.push('## Timeline degli interventi', '');

@@ -13,7 +13,7 @@ GitHub Pages, PWA e installazione: [PUBBLICAZIONE.md](PUBBLICAZIONE.md). Limiti 
 | Costo zero, niente server | Sito statico su GitHub Pages; nessuna chiamata a servizi esterni |
 | Dati solo sul telefono | IndexedDB per riunioni, eventi e audio; localStorage solo per impostazioni e nomi recenti |
 | Uso da iPhone, una mano | Pulsanti grandi, azioni in basso (zona del pollice), schermata di registrazione scura e senza scorrimento |
-| Niente AI integrata | L'app produce solo AUDIO + TIMELINE + NOTE; l'AI la scegli tu dopo |
+| Niente AI a pagamento | L'app produce AUDIO + TIMELINE + NOTE + trascrizione in diretta facoltativa con il riconoscimento vocale gratuito del browser; l'AI per sintesi e trascrizione accurata la scegli tu dopo |
 | Robustezza | Salvataggio a pezzi ogni 5 s, ogni tocco salvato subito, recupero dopo chiusura, verifica finale dell'audio |
 
 **Perché JavaScript puro e niente framework.** L'app ha 4 schermate e uno stato piccolo. React/Vue/Vite porterebbero una fase di compilazione, dipendenze npm da aggiornare e un passaggio in più per pubblicare, senza vantaggi concreti a questa scala. Con i moduli ES nativi (supportati da Safari da anni) si modifica un file, si fa commit e GitHub Pages lo pubblica così com'è. Un framework avrebbe senso se l'interfaccia crescesse molto (molte schermate, più persone a svilupparla). TypeScript si può aggiungere in futuro senza cambiare la pubblicazione: commenti JSDoc + controllo con `tsc --checkJs`.
@@ -54,6 +54,7 @@ GitHub Pages, PWA e installazione: [PUBBLICAZIONE.md](PUBBLICAZIONE.md). Limiti 
 | `app.js` | router a hash (`#/`, `#/nuova`, `#/rec/<id>`, `#/timeline/<id>`, `#/export/<id>`, `#/diagnostica`); durante la registrazione blocca la navigazione sulla schermata REC; registra il service worker e propone gli aggiornamenti solo quando non si registra |
 | `session.js` | sessione di registrazione: microfono, parti audio, salvataggio dei pezzi, eventi, controllo ogni secondo (pezzi che arrivano, microfono sospeso, silenzio, schermo), ripresa, rotazione dei file, recupero dopo chiusura |
 | `recorder.js` | scelta del formato, vincoli del microfono, `PartRecorder` (una istanza di MediaRecorder = un file) |
+| `transcriber.js` | trascrizione in diretta con la Web Speech API: una frase per sessione con riavvio automatico, sblocco se si incanta, ripresa al primo tocco, simulazione `?fakespeech` per i test |
 | `db.js` | IndexedDB con riconnessione automatica e ripiego Blob → ArrayBuffer |
 | `timeline.js` | tocchi → interventi, tempo di parola, intervalli in background, verifica allineamento, spostamento tempi |
 | `exporters.js` | JSON, CSV, TXT, Markdown per AI, nomi dei file |
@@ -137,10 +138,15 @@ Tutte le schermate sono pensate per un iPhone tenuto con una mano: le azioni fre
 ```
 ┌───────────────────────────────┐
 │ ● REC     00:12:34        ＋  │  ← timer grande; ＋ = persona arrivata dopo
-│ 💾 salvato 2 s fa ☀ acceso ▮▮▮ │  ← salvataggio, schermo, livello microfono
+│ ▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱ │  ← barra del microfono: si muove con le voci
+│ 💾 salvato 2 s fa  ☀ acceso    │  ← salvataggio e schermo acceso
 │ ⚠ avvisi solo se servono [Azione]│
 │ ┌───────────────────────────┐ │
 │ │STA PARLANDO Giulia da 1:23│ │  ← nel colore di Giulia
+│ └───────────────────────────┘ │
+│ ┌ 📝 TESTO IN DIRETTA  attiva ┐ │
+│ │Giulia: …il bilancio va    │ │  ← ultima frase + testo provvisorio
+│ │rivisto entro venerdì poi… │ │
 │ └───────────────────────────┘ │
 │ ┌────────────┐ ┌────────────┐ │
 │ │            │ │████████████│ │
@@ -241,7 +247,9 @@ Tocco su un evento → «Modifica evento»:
 { "id": "e…", "meetingId": "r…", "type": "note",    "t": 95.2,   "text": "Decidere il budget", "createdAt": … }
 { "id": "e…", "meetingId": "r…", "type": "mark",    "t": 120.4,  "text": "", "createdAt": … }
 { "id": "e…", "meetingId": "r…", "type": "sys",     "t": 1200.1, "kind": "hidden", "text": "App non visibile …", "createdAt": … }
+{ "id": "e…", "meetingId": "r…", "type": "speech",  "t": 101.2,  "end": 106.8, "text": "Grazie Marco, allora vediamo il bilancio", "createdAt": … }
 ```
+Gli eventi `speech` sono le frasi della trascrizione in diretta (inizio stimato, fine = quando la frase è stata riconosciuta); non hanno uno speaker salvato: lo si ricava dai tocchi, così correggendo un tocco si corregge anche l'attribuzione del testo.
 `t` = secondi dall'inizio della riunione. I `sys` registrano ciò che succede al sistema: `start`, `part-start`, `hidden`/`visible`, `mute`/`unmute`, `ended`, `recorder-stop`, `error`, `device`, `container`, `stop`.
 
 ### Pezzo di audio (store `chunks`)
@@ -318,6 +326,13 @@ segmenti: Marco 0→102 · Giulia 102→195 · Luca 195→307 · Marco 307→400
 - il file contiene salti nei tempi → i tempi restano corretti per i programmi che rispettano i salti; l'avviso lo spiega;
 - differenza non spiegabile → avviso e strumento «Sposta tempi».
 
+**Trascrizione in diretta** (`transcriber.js`, facoltativa, solo in Safari):
+1. il riconoscimento vocale del browser (`webkitSpeechRecognition`, motore della dettatura di iOS) lavora in parallelo alla registrazione, una frase alla volta (`continuous = false`, `interimResults = true`) con riavvio immediato: su iOS è più stabile della modalità continua;
+2. il testo provvisorio compare nel riquadro «Testo in diretta»; ogni frase definitiva diventa un evento `speech` salvato subito, con inizio stimato (primo segnale di parlato o primo risultato meno ~1 s) e fine;
+3. ogni frase va a chi aveva la parola **a metà frase** (`transcriptItems`); il testo di un intervento è l'unione delle sue frasi (`segmentTexts`);
+4. robustezza: un'unica istanza riutilizzata (su iOS ricrearla fa suonare il segnale della dettatura), sblocco dopo 20 s senza segnali, pausa in background e ripresa al ritorno o al primo tocco su un nome, spegnimento automatico se il microfono della registrazione si sospende mentre la trascrizione è attiva;
+5. Annulla non tocca il testo (annulla solo tocchi, note e momenti); nella timeline le frasi si correggono o eliminano a mano.
+
 ---
 
 ## 10. Esportazioni
@@ -327,16 +342,16 @@ Nome dei file: `AAAA-MM-GG_HHMM_titolo`. Con più file audio: `…_audio-parte1.
 | File | Contenuto | Per chi |
 |---|---|---|
 | `…_audio.m4a` | l'audio (AAC) | AI / trascrizione / ascolto |
-| `…_per-AI.md` | istruzioni per l'AI, timeline (anche per singolo file con tempi relativi), momenti importanti, note, tempo di parola, qualità della registrazione | ChatGPT, NotebookLM, … insieme all'audio |
-| `….json` | tutto: riunione, partecipanti, file audio, `segments`, note, momenti, tempo di parola, eventi grezzi, avvisi, correzioni | script, altre AI |
-| `….csv` | una riga per intervento, nota e momento importante (UTF-8 con BOM, separatore virgola) | Excel, fogli di calcolo |
-| `….txt` | tocchi e interventi nel formato `00:01:42 → 00:03:15 \| Giulia` | lettura veloce |
+| `…_per-AI.md` | istruzioni per l'AI, **trascrizione automatica come dialogo** (`**[00:01:42] Giulia:** …`), timeline (anche per singolo file con tempi relativi), momenti importanti, note, tempo di parola, qualità della registrazione | ChatGPT, NotebookLM, … insieme all'audio |
+| `….json` | tutto: riunione, partecipanti, file audio, `segments` (con `text`), `transcript` frase per frase, note, momenti, tempo di parola, eventi grezzi, avvisi, correzioni | script, altre AI |
+| `….csv` | una riga per intervento (con il testo), nota e momento importante (UTF-8 con BOM, separatore virgola) | Excel, fogli di calcolo |
+| `….txt` | tocchi e interventi nel formato `00:01:42 → 00:03:15 \| Giulia`, con il testo sotto ogni intervento | lettura veloce |
 
-`segments` nel JSON segue il formato richiesto, più `audio_part` (il file audio di riferimento):
+`segments` nel JSON segue il formato richiesto, più `audio_part` (il file audio di riferimento) e `text` (il testo riconosciuto in diretta, vuoto se la trascrizione era spenta):
 ```json
 [
-  { "speaker": "Marco",  "start_seconds": 0,   "end_seconds": 102, "start": "00:00:00", "end": "00:01:42", "audio_part": 1 },
-  { "speaker": "Giulia", "start_seconds": 102, "end_seconds": 195, "start": "00:01:42", "end": "00:03:15", "audio_part": 1 }
+  { "speaker": "Marco",  "start_seconds": 0,   "end_seconds": 102, "start": "00:00:00", "end": "00:01:42", "audio_part": 1, "text": "Buongiorno a tutti, iniziamo dal bilancio…" },
+  { "speaker": "Giulia", "start_seconds": 102, "end_seconds": 195, "start": "00:01:42", "end": "00:03:15", "audio_part": 1, "text": "Grazie Marco, allora vediamo…" }
 ]
 ```
 
@@ -354,7 +369,7 @@ Tutte realizzabili restando gratuite e senza server:
 
 1. **Backup e importazione** di una riunione (JSON + audio) per spostarla fra Safari e l'app da Home o su un altro telefono.
 2. **Conversione locale in WAV/MP3** per i servizi che non accettano `.m4a`: su iOS 26 con WebCodecs (`AudioDecoder`), che decodifica a pezzi senza esaurire la memoria.
-3. **Trascrizione nel telefono** con Whisper in WebAssembly (whisper.cpp o transformers.js): gratuita ma lenta e pesante su iPhone per riunioni lunghe; più realistica su computer.
+3. **Trascrizione accurata dopo la riunione** con Whisper in WebAssembly/WebGPU (whisper.cpp o transformers.js): gratuita e locale, ma lenta e pesante su iPhone per riunioni lunghe; più realistica su computer. Migliorerebbe la trascrizione in diretta, che è approssimativa.
 4. **Script di allineamento** (Python o Node, sul computer): unisce la trascrizione con timestamp di Whisper e il `segments` del JSON per produrre «chi ha detto cosa» senza AI a pagamento.
 5. Pulsante **«Più voci / Altro»** per sovrapposizioni e ospiti non in elenco.
 6. **Compensazione automatica del tempo di reazione** (es. −1 s su ogni tocco) come impostazione.

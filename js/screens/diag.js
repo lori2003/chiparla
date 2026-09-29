@@ -12,6 +12,7 @@ import { getSettings } from '../settings.js';
 import { session } from '../session.js';
 import { browserInfo, appVersion, isIOS } from '../env.js';
 import { fmtBytes, fmtTime, baseMime } from '../util.js';
+import { LiveTranscriber, transcriptionSupport, STATE_TEXT } from '../transcriber.js';
 
 const DIAG_ID = '__diagnostica__';
 const MARK = { ok: '✓', warn: '⚠', bad: '✗', info: 'ⓘ' };
@@ -26,12 +27,15 @@ export async function renderDiag(root) {
   const btn = h('button', { type: 'button', class: 'btn primary xl' });
   btn.addEventListener('click', () => { if (test.state === 'recording') test.stop(); else test.start(); });
   const liveEl = h('p', { class: 'mono' });
+  const speechEl = h('p', { class: 'small' });
+  // Su iOS la trascrizione può richiedere un tocco per partire
+  const speechBtn = h('button', { type: 'button', class: 'btn small secondary', onclick: () => test.transcriber?.ensure() }, '📝 Attiva la trascrizione');
   const errorEl = h('p', { class: 'line bad' });
   const resultsEl = h('ul', { class: 'checks' });
   const playerBox = h('div', {});
   const logPre = h('pre', { class: 'preview' });
   const logBox = h('details', { class: 'small' }, h('summary', {}, 'Registro della prova'), logPre);
-  const testBox = h('div', {}, btn, liveEl, errorEl, resultsEl, playerBox, logBox);
+  const testBox = h('div', {}, btn, liveEl, speechEl, speechBtn, errorEl, resultsEl, playerBox, logBox);
   let shownResult = null;
   let shownPlayer = null;
 
@@ -46,6 +50,13 @@ export async function renderDiag(root) {
     if (!liveEl.hidden) {
       liveEl.textContent = `${fmtTime((Date.now() - test.startedAt) / 1000)} · ${test.chunks.length} pezzi salvati · livello ${levelBar(test.meter?.level)}`;
     }
+    const tr = test.transcriber;
+    speechEl.hidden = !(running && tr);
+    if (!speechEl.hidden) {
+      const heard = [...test.speech.map((s) => s.text), test.interim].filter(Boolean).join(' ');
+      speechEl.textContent = `📝 trascrizione ${STATE_TEXT[tr.state] ?? tr.state}: ${heard ? `«${heard.slice(-160)}»` : 'parla vicino al telefono…'}`;
+    }
+    speechBtn.hidden = !(running && tr && ['paused', 'error', 'offline'].includes(tr.state));
     errorEl.hidden = !test.error;
     errorEl.textContent = test.error ? `✗ ${test.error}` : '';
     if (test.result !== shownResult) {
@@ -107,7 +118,10 @@ function featureChecks(env, storage, blobTest) {
   let canShareFiles = false;
   try { canShareFiles = !!navigator.canShare?.({ files: [new File(['x'], 'x.txt', { type: 'text/plain' })] }); } catch { /* no */ }
   const c = (label, ok, value, note = '', level = ok ? 'ok' : 'bad') => ({ label, value, note, level });
+  const speech = transcriptionSupport();
   return [
+    c('Trascrizione in diretta', speech.ok, speech.ok ? 'disponibile' : 'non disponibile',
+      speech.ok ? 'verifica con la prova qui sotto che funzioni insieme alla registrazione' : speech.reason, speech.ok ? 'ok' : 'warn'),
     c('Microfono', !!navigator.mediaDevices?.getUserMedia, navigator.mediaDevices?.getUserMedia ? 'disponibile' : 'non disponibile', 'serve https'),
     c('Registrazione (MediaRecorder)', mime !== null, mime === null ? 'non supportata' : 'supportata', mime === null ? 'aggiorna iOS (serve 14.5+)' : ''),
     c('Formato audio', !!mime, mime || 'predefinito del browser', `supportati: ${supportedMimeTypes().join(', ') || 'nessuno dei preferiti'}`, mime ? 'ok' : 'warn'),
@@ -159,6 +173,11 @@ class DiagTest {
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = null;
     this.playerEl = null;
+    this.transcriber = null;
+    this.speech = [];
+    this.interim = '';
+    this.speechInfo = null;
+    this.interference = false;
   }
 
   addLog(text) {
@@ -182,7 +201,16 @@ class DiagTest {
       this.meter.attach(this.stream);
       const track = this.stream.getAudioTracks()[0];
       for (const type of ['mute', 'unmute', 'ended']) {
-        track.addEventListener(type, () => { this.trackEvents.push(type); this.addLog(`microfono: ${type}`); });
+        track.addEventListener(type, () => {
+          this.trackEvents.push(type);
+          this.addLog(`microfono: ${type}`);
+          // come nella registrazione vera: se con la trascrizione attiva il microfono si sospende, la si spegne
+          if (type === 'mute' && document.visibilityState === 'visible' && this.transcriber?.active) {
+            this.interference = true;
+            this.transcriber.disable('spenta: disturbava la registrazione');
+            this.addLog('trascrizione spenta: il microfono della registrazione si è sospeso');
+          }
+        });
       }
       this.onVis = () => {
         if (document.visibilityState === 'hidden') {
@@ -223,7 +251,8 @@ class DiagTest {
       this.mime = this.rec.mimeType || this.mime;
       this.state = 'recording';
       this.addLog(`prova avviata (${this.mime || 'formato predefinito'}, un pezzo ogni ${settings.timesliceMs / 1000} s)`);
-      this.timer = setInterval(() => { this.meter.sample(); this.onUpdate(); }, 500);
+      this.startTranscription(settings);
+      this.timer = setInterval(() => { this.meter.sample(); this.transcriber?.watchdog(); this.onUpdate(); }, 500);
     } catch (e) {
       this.cleanupMedia();
       this.state = 'idle';
@@ -232,8 +261,23 @@ class DiagTest {
     }
   }
 
+  // Stessa trascrizione della registrazione vera, per verificare che le due cose convivano
+  startTranscription(settings) {
+    const support = transcriptionSupport();
+    if (!settings.transcribe) { this.speechInfo = 'spenta nelle impostazioni'; return; }
+    if (!support.ok) { this.speechInfo = support.reason; return; }
+    this.transcriber = new LiveTranscriber({
+      lang: settings.lang,
+      onFinal: ({ text }) => { this.speech.push({ text }); this.addLog(`testo: «${text}»`); },
+      onInterim: (text) => { this.interim = text; },
+      onState: (s) => this.addLog(`trascrizione: ${STATE_TEXT[s] ?? s}`),
+    });
+    this.transcriber.start();
+  }
+
   async stop() {
     if (this.state !== 'recording') return;
+    this.transcriber?.stop();
     const stoppedAt = Date.now();
     if (this.hiddenAt) { this.hidden.push((stoppedAt - this.hiddenAt) / 1000); this.hiddenAt = null; }
     this.state = 'analyzing';
@@ -265,6 +309,13 @@ class DiagTest {
       playerDur,
       mime: this.mime,
       stored: stored.length,
+      speech: {
+        info: this.speechInfo,
+        texts: this.speech.map((s) => s.text),
+        errors: this.transcriber?.errors ?? [],
+        state: this.transcriber?.state ?? null,
+        interference: this.interference,
+      },
     });
     this.state = 'done';
     this.onUpdate();
@@ -272,6 +323,7 @@ class DiagTest {
 
   cleanupMedia() {
     clearInterval(this.timer);
+    this.transcriber?.stop();
     if (this.onVis) document.removeEventListener('visibilitychange', this.onVis);
     this.stream?.getTracks().forEach((t) => t.stop());
     this.meter?.close();
@@ -310,6 +362,24 @@ export function interpret(r) {
 
   if (r.container?.recoverable) ok(`Formato ${r.container.kind === 'fmp4' ? 'MP4 frammentato' : r.container.kind} (${r.mime}): i pezzi salvati restano leggibili anche dopo una chiusura improvvisa.`);
   else if (r.container?.recoverable === false) bad(`Formato ${r.container.kind}: dopo una chiusura improvvisa il file potrebbe non essere leggibile. ChiParla dividerà l'audio in file da 10 minuti.`);
+
+  // trascrizione in diretta insieme alla registrazione
+  const sp = r.speech;
+  if (sp?.info) {
+    info(`Trascrizione in diretta non provata: ${sp.info}.`);
+  } else if (sp) {
+    const words = sp.texts.join(' ').split(/\s+/).filter(Boolean).length;
+    if (sp.interference) {
+      bad('Con la trascrizione attiva il microfono della registrazione si è sospeso: in riunione ChiParla la spegnerà da sola per proteggere l\'audio. Puoi disattivarla da «Nuova riunione».');
+    } else if (sp.texts.length) {
+      ok(`Trascrizione in diretta insieme alla registrazione: ${sp.texts.length} frasi, ${words} parole — «${sp.texts.join(' ').slice(0, 160)}»`);
+    } else {
+      warn(`Nessuna frase trascritta${sp.errors.length ? ` (errori: ${[...new Set(sp.errors)].join(', ')})` : ''}${sp.state ? `, stato: ${STATE_TEXT[sp.state] ?? sp.state}` : ''}. Parla vicino al telefono e ripeti la prova; se resta vuota, qui la trascrizione non funziona (l'audio sì).`);
+    }
+    if (r.analysis?.gaps?.length && !r.hidden.length) {
+      warn('Nel file audio ci sono piccoli salti anche senza interruzioni: la trascrizione potrebbe disturbare la registrazione. Ascolta la prova; nel dubbio disattivala.');
+    }
+  }
 
   const a = r.analysis?.durationSec ?? r.playerDur;
   if (a == null) {

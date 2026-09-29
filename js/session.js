@@ -17,6 +17,7 @@ import { getSettings } from './settings.js';
 import { isStandalone } from './env.js';
 import { uid, extForMime, nextColor } from './util.js';
 import { currentSpeakerId } from './timeline.js';
+import { LiveTranscriber, transcriptionSupport } from './transcriber.js';
 
 // Pezzi che non è stato possibile scrivere su IndexedDB: restano in memoria fino all'esportazione
 const memoryChunks = [];
@@ -59,6 +60,9 @@ class RecordingSession extends EventTarget {
     this.autoRotateMin = 0;
     this.rotating = false;
     this.resuming = false;
+    this.transcriber = null;
+    this.interim = '';
+    this.transcribeInfo = null; // perché la trascrizione non è disponibile, se non lo è
   }
 
   get active() { return this.status !== 'idle'; }
@@ -112,7 +116,41 @@ class RecordingSession extends EventTarget {
     document.addEventListener('visibilitychange', this.onVisibility);
     navigator.mediaDevices?.addEventListener?.('devicechange', this.onDeviceChange);
     this.timer = setInterval(() => this.watchdog(), 1000);
+    this.startTranscription();
     return meeting.id;
+  }
+
+  // ---------- trascrizione in diretta ----------
+
+  startTranscription() {
+    if (!this.settings.transcribe) { this.transcribeInfo = 'spenta nelle impostazioni'; return; }
+    if (this.external) {
+      // userebbe il microfono e potrebbe interrompere la registrazione di Memo Vocali
+      this.transcribeInfo = 'non disponibile in modalità "solo timeline"';
+      return;
+    }
+    const support = transcriptionSupport();
+    if (!support.ok) {
+      this.transcribeInfo = support.reason;
+      this.setWarning('transcribe', `Trascrizione in diretta non disponibile: ${support.reason} L'audio viene registrato comunque.`, 'warn', 'dismiss');
+      return;
+    }
+    this.transcriber = new LiveTranscriber({
+      lang: this.settings.lang,
+      onFinal: ({ text, startMs, endMs }) => {
+        this.addEvent('speech', { text, end: this.elapsed(endMs) }, startMs);
+      },
+      onInterim: (text) => {
+        this.interim = text;
+        this.dispatchEvent(new Event('transcript'));
+      },
+      onState: (state) => {
+        const t = this.transcriber;
+        if ((state === 'denied' || state === 'disabled') && t?.reason) this.setWarning('transcribe', t.reason, 'warn', 'dismiss');
+        this.emit();
+      },
+    });
+    this.transcriber.start();
   }
 
   // Modalità "solo timeline": l'audio lo registra un'altra app (es. Memo Vocali), qui solo orologio e tocchi
@@ -260,6 +298,7 @@ class RecordingSession extends EventTarget {
   touch() {
     this.meter?.resume();
     if (this.wake.wanted && !this.wake.active) this.wake.request();
+    this.transcriber?.ensure();
   }
 
   speaker(speakerId, atMs) {
@@ -279,9 +318,9 @@ class RecordingSession extends EventTarget {
     await db.putEvent(ev);
   }
 
-  // Annulla l'ultimo tocco fatto (speaker, nota o momento importante)
+  // Annulla l'ultimo tocco fatto (speaker, nota o momento importante; non il testo trascritto)
   async undo() {
-    const mine = this.events.filter((e) => e.type !== 'sys');
+    const mine = this.events.filter((e) => e.type !== 'sys' && e.type !== 'speech');
     if (!mine.length) return null;
     const last = mine.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
     this.events = this.events.filter((e) => e !== last);
@@ -303,6 +342,7 @@ class RecordingSession extends EventTarget {
 
   onVisibility() {
     if (!this.active) return;
+    this.transcriber?.onVisibility(document.visibilityState === 'visible');
     if (document.visibilityState === 'hidden') {
       this.hiddenAt = Date.now();
       this.addSys('hidden', 'App non visibile (schermo bloccato o altra app)');
@@ -328,6 +368,12 @@ class RecordingSession extends EventTarget {
 
   onTrackMute(muted) {
     if (!this.active) return;
+    // Con l'app visibile il microfono non dovrebbe sospendersi: se succede con la trascrizione attiva,
+    // la registrazione ha la precedenza e la trascrizione si spegne
+    if (muted && document.visibilityState === 'visible' && this.transcriber?.active) {
+      this.transcriber.disable('Trascrizione spenta: mentre era attiva, il microfono della registrazione si è sospeso. L\'audio ha la precedenza.');
+      this.addSys('transcribe-off', 'Trascrizione spenta per proteggere la registrazione');
+    }
     this.addSys(muted ? 'mute' : 'unmute', muted ? 'Microfono sospeso dal sistema' : 'Microfono di nuovo attivo');
     this.mutedSince = muted ? Date.now() : null;
     if (!muted) this.clearWarning('muted');
@@ -428,6 +474,7 @@ class RecordingSession extends EventTarget {
     if (!this.active) return;
     const now = Date.now();
     this.meter?.sample();
+    this.transcriber?.watchdog(now);
     if (this.status === 'recording' && document.visibilityState === 'visible') {
       this.checkScreen();
       if (!this.external) this.checkAudio(now);
@@ -481,6 +528,7 @@ class RecordingSession extends EventTarget {
     if (!this.active || this.status === 'stopping') return null;
     const m = this.meeting;
     const stopSec = this.elapsed();
+    this.transcriber?.stop(); // salva anche la frase in corso
     this.status = 'stopping';
     this.emit();
     clearInterval(this.timer);
@@ -511,6 +559,7 @@ class RecordingSession extends EventTarget {
 
   teardown() {
     clearInterval(this.timer);
+    this.transcriber?.stop();
     document.removeEventListener('visibilitychange', this.onVisibility);
     navigator.mediaDevices?.removeEventListener?.('devicechange', this.onDeviceChange);
     try { this.stream?.getTracks().forEach((t) => t.stop()); } catch { /* ignora */ }

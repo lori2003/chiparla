@@ -13,6 +13,7 @@ Legenda: ✅ affidabile · ⚠️ funziona con limiti · ❌ non affidabile
 | Registrazioni lunghe (1-3 ore) in primo piano | ⚠️ | salvataggio ogni 5 s, memoria costante, file divisibili |
 | Recupero dopo chiusura accidentale | ⚠️ | si perdono al massimo gli ultimi secondi |
 | MediaRecorder / microfono in primo piano | ✅ | AAC in `.m4a` |
+| Trascrizione in diretta (testo di chi parla) | ⚠️ | solo in Safari; testo approssimativo; si spegne da sola se disturba la registrazione |
 | Formato audio per le AI | ⚠️ | `.m4a` quasi sempre accettato; conversione gratuita se serve |
 | IndexedDB e spazio | ⚠️ | esportare dopo ogni riunione |
 | PWA sulla schermata Home | ⚠️ | archivio separato da Safari, Wake Lock da iOS 18.4 |
@@ -77,6 +78,29 @@ Legenda: ✅ affidabile · ⚠️ funziona con limiti · ❌ non affidabile
 - Elaborazione del microfono (cancellazione eco, riduzione rumore) spenta di default: è pensata per le chiamate e abbassa le voci lontane dal telefono.
 - Il telefono va appoggiato al centro del tavolo, con il bordo inferiore (dove c'è il microfono) libero e non coperto dalla custodia.
 
+## ⚠️ Trascrizione in diretta (testo di chi parla)
+
+**Cosa succede davvero**
+- Safari (da iOS 14.5) offre il riconoscimento vocale del browser (Web Speech API) con il motore della dettatura di Apple: gratuito e senza chiavi o abbonamenti.
+- Funziona in **Safari** ma **non nelle app aggiunte alla schermata Home** ([What PWA Can Do Today](https://whatpwacando.today/speech-recognition/), [Apple Developer Forums](https://developer.apple.com/forums/thread/748048)).
+- Può lavorare sul telefono oppure sui server Apple, e iOS può passare da uno all'altro da solo ([Apple Developer Forums, 2025](https://developer.apple.com/forums/thread/775699), [addpipe](https://blog.addpipe.com/a-deep-dive-into-the-web-speech-api/)). Senza internet spesso non funziona.
+- Su iOS la modalità continua è instabile (si ferma da sola, si blocca, il testo si accumula senza fine: [lilting, 2026](https://lilting.ch/en/articles/ios-webspeech-api-tips), [web-speech-api #96](https://github.com/WebAudio/web-speech-api/issues/96)). ChiParla riconosce una frase alla volta e riparte subito: tra una frase e l'altra qualche parola può andare persa.
+- Il riconoscimento usa lo stesso microfono della registrazione ([bug WebKit 219371](https://bugs.webkit.org/show_bug.cgi?id=219371)). **Non è documentato che le due cose convivano sempre senza disturbarsi**: va verificato sul tuo iPhone con la Diagnostica.
+- È pensato per la dettatura a pochi centimetri: con il telefono sul tavolo, voci lontane o sovrapposte, il testo sarà **approssimativo**. Si ferma con lo schermo bloccato o l'app in background.
+
+**Cosa fa ChiParla**
+- Mostra il testo in diretta nella schermata REC, con il nome di chi parla: è la prova visibile che il telefono sente le voci. La barra verde sotto il timer si muove con il volume.
+- Salva ogni frase subito su IndexedDB (non si perde se Safari si chiude) e la attribuisce a chi aveva la parola a metà frase, secondo i tocchi sui nomi.
+- Riavvia il riconoscimento dopo ogni frase, lo sblocca se resta fermo, e se iOS vuole un tocco riparte al primo tocco su un nome.
+- **Se con la trascrizione attiva il microfono della registrazione si sospende, la spegne da sola**: l'audio ha sempre la precedenza.
+- In modalità "solo timeline" (audio con Memo Vocali) la trascrizione resta spenta, perché userebbe il microfono e potrebbe interrompere Memo Vocali.
+- Nella Timeline il testo si può correggere; nei file esportati è indicato come approssimativo e le istruzioni per l'AI ne tengono conto.
+
+**Cosa fai tu**
+- Usa ChiParla **in Safari**. Per avere un'icona: *Condividi → Aggiungi alla schermata Home* con **«Apri come app web» disattivato** (iOS 26), così l'icona apre Safari.
+- Prima di una riunione fai la prova in Diagnostica: deve comparire «Trascrizione in diretta insieme alla registrazione: N frasi».
+- Per un testo accurato dai all'AI anche l'audio. Se non vuoi che l'audio passi da Apple, spegni la trascrizione in «Nuova riunione»: la registrazione resta solo sul telefono.
+
 ## ⚠️ Formato audio e compatibilità con le AI
 
 - Il `.m4a` di Safari ha la durata a zero nell'intestazione: iPhone, Mac e VLC lo leggono bene, alcuni programmi (per esempio Lettore multimediale di Windows) non mostrano la durata o non permettono di spostarsi ([addpipe](https://blog.addpipe.com/duration-in-mp4-files-produced-by-chrome-safari/)). ChiParla misura comunque la durata vera da sé.
@@ -95,6 +119,7 @@ Legenda: ✅ affidabile · ⚠️ funziona con limiti · ❌ non affidabile
 - Service worker e uso offline: ✅.
 - **Archivio separato da Safari**: le riunioni non passano da una all'altra.
 - Wake Lock solo da iOS 18.4. Nessuna esecuzione in background.
+- **Niente trascrizione in diretta** (il riconoscimento vocale funziona solo in Safari): per questo ChiParla va usata in Safari.
 - Nell'Unione Europea le app dalla Home funzionano: nel 2024 Apple ha ritirato il piano di rimuoverle.
 
 ## ⚠️ Download dei file

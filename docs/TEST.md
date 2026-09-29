@@ -1,6 +1,6 @@
 # Prove da fare prima di una riunione vera
 
-Tempo totale: circa 30 minuti più una prova lunga. Falle **sull'iPhone che userai**, nella modalità che userai (Safari oppure app dalla Home: hanno comportamenti e archivi diversi). Ripetile dopo ogni aggiornamento importante di iOS.
+Tempo totale: circa 30 minuti più una prova lunga. Falle **sull'iPhone che userai**, **in Safari** (è l'unico modo per avere la trascrizione in diretta; l'app web dalla Home ha comportamenti e archivio diversi). Ripetile dopo ogni aggiornamento importante di iOS.
 
 Annota i risultati nella tabella in fondo: ti diranno se puoi fidarti della registrazione con ChiParla o se conviene la modalità "solo timeline" con Memo Vocali.
 
@@ -18,15 +18,18 @@ Annota i risultati nella tabella in fondo: ti diranno se puoi fidarti della regi
 
 ## 2. Prova in primo piano (2 minuti)
 
-**Diagnostica → Avvia la prova**, parla normalmente per 60 secondi a 1-2 metri dal telefono, poi **Ferma e analizza**.
+**Diagnostica → Avvia la prova**, parla normalmente per 60 secondi a 1-2 metri dal telefono, poi **Ferma e analizza**. Durante la prova sotto il contatore compare il testo riconosciuto (se compare «Attiva la trascrizione», toccalo: la prima volta iOS chiede il permesso).
 
 Atteso:
 - ✓ Salvataggio progressivo: un pezzo circa ogni 5 s;
 - ✓ Formato MP4 frammentato: recuperabile dopo una chiusura improvvisa;
-- ✓ Audio e timer coincidono (differenza entro 1-2 s);
-- ascoltando la prova la voce si capisce bene anche da lontano.
+- ✓ **Trascrizione in diretta insieme alla registrazione: N frasi** (il testo sarà approssimativo);
+- ✓ Audio e timer coincidono (differenza entro 1-2 s) e nessun avviso di "salti" nell'audio;
+- ascoltando la prova la voce si capisce bene anche da lontano, senza interruzioni.
 
 ❗ Se il salvataggio progressivo manca: imposta «Dividi l'audio ogni 15 minuti». Se la voce è bassa: avvicina il telefono o prova l'altra impostazione del microfono.
+❗ Se la trascrizione risulta spenta perché «disturbava la registrazione», o se nell'audio senti buchi: in «Nuova riunione» disattiva la trascrizione in diretta (l'audio viene prima) e ottieni il testo dopo, dando l'audio all'AI.
+❗ Se non compare nessuna frase: controlla di essere in Safari, di avere internet e i permessi (*Impostazioni → Privacy e sicurezza → Riconoscimento vocale*).
 
 ## 3. Prova schermo bloccato — la più importante (3 minuti)
 
@@ -62,8 +65,8 @@ Metti in riproduzione una trasmissione radio o un podcast con più voci (da un a
 
 Controlla a fine prova:
 - batteria consumata e temperatura del telefono;
-- nessun avviso rosso durante la registrazione;
-- in timeline: «✓ … Allineato alla timeline»;
+- nessun avviso rosso durante la registrazione; il riquadro «Testo in diretta» è rimasto «attiva» per tutta la prova;
+- in timeline: «✓ … Allineato alla timeline» e il testo sotto gli interventi, attribuito alle persone giuste;
 - esportazione: dimensione del file (~29 MB/ora a 64 kbps) e tempo per preparare i file;
 - l'audio si ascolta fino alla fine.
 
@@ -82,7 +85,7 @@ Durante una prova di registrazione: fatti chiamare da qualcuno (rifiuta o rispon
 
 ## 9. Offline (2 minuti)
 
-Attiva la modalità aereo, apri ChiParla, fai una registrazione di 30 s ed esportala con «Salva su File». Deve funzionare tutto.
+Attiva la modalità aereo, apri ChiParla, fai una registrazione di 30 s ed esportala con «Salva su File». La registrazione deve funzionare; la trascrizione in diretta probabilmente no (di solito serve internet) e il riquadro lo segnala.
 
 ## 10. Modalità "solo timeline" con Memo Vocali (se ti serve la massima sicurezza)
 
@@ -99,6 +102,7 @@ Attiva la modalità aereo, apri ChiParla, fai una registrazione di 30 s ed espor
 |---|---|---|---|
 | 1. Funzioni | | | |
 | 2. Primo piano (pezzi / formato / durata) | | | |
+| 2. Trascrizione insieme alla registrazione (frasi? buchi nell'audio?) | | | |
 | 3. Schermo bloccato (esito) | | | |
 | 4. Cambio app (esito) | | | |
 | 5. Recupero dopo chiusura | | | |
@@ -113,6 +117,7 @@ Attiva la modalità aereo, apri ChiParla, fai una registrazione di 30 s ed espor
 - [ ] Almeno 1 GB libero
 - [ ] Riunione precedente già esportata
 - [ ] Telefono al centro del tavolo, microfono (bordo in basso) libero
-- [ ] Partecipanti inseriti, **Avvia**, controlla «💾 salvato … s fa» e «☀ schermo acceso»
+- [ ] ChiParla aperta **in Safari** (con internet, se vuoi la trascrizione)
+- [ ] Partecipanti inseriti, **Avvia**, controlla «💾 salvato … s fa», «☀ schermo acceso», la barra verde che si muove e il riquadro «Testo in diretta» che mostra le frasi
 - [ ] Durante: app sempre in primo piano; note con la tastiera, non dettate
 - [ ] Dopo: **Stop**, controlla la timeline, **Esporta → Salva su File**

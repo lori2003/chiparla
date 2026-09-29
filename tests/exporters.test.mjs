@@ -29,11 +29,13 @@ const events = [
 test('JSON: "segments" nel formato richiesto', () => {
   const obj = JSON.parse(toJSON(buildModel(meeting, events, { version: '1.0.0' })));
   assert.deepEqual(obj.segments, [
-    { speaker: 'Marco', start_seconds: 0, end_seconds: 102, start: '00:00:00', end: '00:01:42', audio_part: 1 },
-    { speaker: 'Giulia', start_seconds: 102, end_seconds: 195, start: '00:01:42', end: '00:03:15', audio_part: 1 },
-    { speaker: 'Luca', start_seconds: 195, end_seconds: 307, start: '00:03:15', end: '00:05:07', audio_part: 1 },
-    { speaker: 'Marco', start_seconds: 307, end_seconds: 400, start: '00:05:07', end: '00:06:40', audio_part: 1 },
+    { speaker: 'Marco', start_seconds: 0, end_seconds: 102, start: '00:00:00', end: '00:01:42', audio_part: 1, text: '' },
+    { speaker: 'Giulia', start_seconds: 102, end_seconds: 195, start: '00:01:42', end: '00:03:15', audio_part: 1, text: '' },
+    { speaker: 'Luca', start_seconds: 195, end_seconds: 307, start: '00:03:15', end: '00:05:07', audio_part: 1, text: '' },
+    { speaker: 'Marco', start_seconds: 307, end_seconds: 400, start: '00:05:07', end: '00:06:40', audio_part: 1, text: '' },
   ]);
+  assert.deepEqual(obj.transcript, []);
+  assert.equal(obj.transcript_source, null);
   assert.equal(obj.meeting.duration, '00:06:40');
   assert.equal(obj.notes[0].speaker, 'Marco');
   assert.equal(obj.highlights[0].speaker, 'Giulia');
@@ -91,6 +93,47 @@ test('più file audio: timeline per file con tempi relativi e avvisi sul buco', 
   assert.ok(model.warnings.some((w) => w.includes('recuperato dopo una chiusura improvvisa')));
   assert.ok(model.warnings.some((w) => w.startsWith('App non visibile da 00:01:35')));
   assert.equal(audioFileName(m2, m2.parts[0]), '2026-09-28_1030_comitato-di-settembre_audio-parte1.m4a');
+});
+
+test('trascrizione in diretta: testo attribuito a chi parlava, in JSON, CSV, TXT e Markdown', () => {
+  const speech = (t, end, text) => ({ id: `s@${t}`, meetingId: 'r1', type: 'speech', t, end, text, createdAt: t });
+  const withText = [
+    ...events,
+    speech(1.5, 6, 'Buongiorno a tutti, iniziamo.'),
+    speech(40, 47, 'Primo punto: il bilancio.'),
+    // a cavallo del cambio Marco→Giulia (102): metà frase a 103 → Giulia
+    speech(99.5, 106.5, 'Grazie Marco, allora vediamo'),
+    speech(200, 204, 'Io "non" sono d\'accordo, però'),
+  ];
+  const model = buildModel(meeting, withText);
+  assert.deepEqual(model.transcript.map((x) => [x.speaker, x.start, x.text]), [
+    ['Marco', '00:00:01', 'Buongiorno a tutti, iniziamo.'],
+    ['Marco', '00:00:40', 'Primo punto: il bilancio.'],
+    ['Giulia', '00:01:39', 'Grazie Marco, allora vediamo'],
+    ['Luca', '00:03:20', 'Io "non" sono d\'accordo, però'],
+  ]);
+  assert.deepEqual(model.segments.map((s) => s.text), [
+    'Buongiorno a tutti, iniziamo. Primo punto: il bilancio.', 'Grazie Marco, allora vediamo', 'Io "non" sono d\'accordo, però', '',
+  ]);
+
+  const obj = JSON.parse(toJSON(model));
+  assert.equal(obj.transcript.length, 4);
+  assert.match(obj.transcript_source, /approssimativo/);
+
+  const csv = toCSV(model).trim().split('\r\n');
+  assert.equal(csv[1], 'segment,Marco,00:00:00,00:01:42,0,102,102,1,"Buongiorno a tutti, iniziamo. Primo punto: il bilancio."');
+  assert.ok(csv.includes('segment,Luca,00:03:15,00:05:07,195,307,112,1,"Io ""non"" sono d\'accordo, però"'));
+
+  const txt = toTXT(model);
+  assert.match(txt, /00:01:42 → 00:03:15 \| Giulia\n {4}Grazie Marco, allora vediamo/);
+
+  const md = toMarkdown(model);
+  assert.match(md, /## Trascrizione automatica \(approssimativa\)/);
+  assert.match(md, /\*\*\[00:00:00\] Marco:\*\* Buongiorno a tutti, iniziamo\. Primo punto: il bilancio\./);
+  assert.match(md, /\*\*\[00:05:07\] Marco:\*\* _\(nessun testo riconosciuto\)_/);
+  assert.match(md, /trascrizione automatica fatta in diretta/);
+  // senza trascrizione il documento resta come prima
+  assert.doesNotMatch(toMarkdown(buildModel(meeting, events)), /Trascrizione automatica/);
 });
 
 test('solo timeline (audio con un\'altra app): nessun file audio, avviso finché non si allinea', () => {

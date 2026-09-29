@@ -4,7 +4,7 @@
 // Per pubblicare un aggiornamento: modificare i file, aumentare VERSION, fare commit e push.
 // L'app mostrerà «Nuova versione disponibile» (mai durante una registrazione).
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const CACHE = `chiparla-${VERSION}`;
 
 const ASSETS = [
@@ -24,6 +24,7 @@ const ASSETS = [
   'js/session.js',
   'js/settings.js',
   'js/timeline.js',
+  'js/transcriber.js',
   'js/ui.js',
   'js/util.js',
   'js/wakelock.js',

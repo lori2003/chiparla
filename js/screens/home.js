@@ -25,6 +25,7 @@ export async function renderHome(root) {
     interrupted.map(recoveryCard),
     h('a', { class: 'btn primary xl', href: '#/nuova' }, '＋ Nuova riunione'),
     isIOS() && !env.standalone ? installHint() : null,
+    isIOS() && env.standalone ? standaloneHint() : null,
     h('h2', { class: 'section-title' }, 'Riunioni salvate'),
     saved.length
       ? h('ul', { class: 'list' }, saved.map(meetingRow))
@@ -74,11 +75,22 @@ function meetingRow(m) {
 
 function installHint() {
   return h('details', { class: 'card hint' },
-    h('summary', {}, 'Installa come app sull\'iPhone'),
+    h('summary', {}, 'Icona sulla schermata Home'),
+    h('p', { class: 'small' }, 'La trascrizione in diretta funziona solo in Safari. Per avere comunque un\'icona:'),
     h('ol', { class: 'small' },
-      h('li', {}, 'In Safari tocca il pulsante Condividi (quadrato con la freccia).'),
-      h('li', {}, 'Scegli «Aggiungi alla schermata Home» e conferma.'),
-      h('li', {}, 'Da quel momento apri ChiParla dall\'icona: funziona anche senza internet.')),
-    h('p', { class: 'small' }, h('strong', {}, 'Importante: '),
-      'l\'app sulla Home ha un archivio separato da Safari. Le riunioni registrate qui in Safari non compaiono nell\'app e viceversa: scegli una delle due e usa sempre quella.'));
+      h('li', {}, 'In Safari tocca Condividi (quadrato con la freccia) → «Aggiungi alla schermata Home».'),
+      h('li', {}, 'Disattiva «Apri come app web» (iOS 26 e successivi), poi «Aggiungi»: l\'icona aprirà ChiParla in Safari, con la trascrizione.'),
+      h('li', {}, 'Funziona anche senza internet; la trascrizione però di solito richiede internet.')),
+    h('p', { class: 'small' }, h('strong', {}, 'Nota: '),
+      'se la aggiungi come app web ha un archivio separato da Safari (le riunioni non si vedono da una all\'altra) e niente trascrizione in diretta.'));
+}
+
+// Aperta dall'icona come app web: tutto funziona tranne la trascrizione in diretta
+function standaloneHint() {
+  const url = location.href.split('#')[0].split('?')[0];
+  return h('div', { class: 'card card-warn small' },
+    h('strong', {}, 'Qui la trascrizione in diretta non funziona. '),
+    'iOS la consente solo in Safari: apri ',
+    h('a', { href: url, target: '_blank', rel: 'noopener' }, url.replace(/^https?:\/\//, '')),
+    ' in Safari. Le riunioni già registrate in questa app restano qui (l\'archivio è separato): esportale da qui.');
 }

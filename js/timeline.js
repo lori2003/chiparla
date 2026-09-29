@@ -80,6 +80,30 @@ export function speakerAt(segments, t) {
   return s ? s.speakerId : null;
 }
 
+/**
+ * Frasi della trascrizione in diretta (eventi "speech") con lo speaker attribuito:
+ * chi aveva la parola a metà della frase. `seg` è l'indice del segmento che la contiene.
+ */
+export function transcriptItems(events, segments) {
+  return sortEvents(events.filter((e) => e.type === 'speech' && String(e.text ?? '').trim()))
+    .map((e) => {
+      const end = Math.max(e.t, e.end ?? e.t);
+      const mid = (e.t + end) / 2;
+      let seg = segments.findIndex((s) => s.start <= mid && mid < s.end);
+      if (seg === -1 && segments.length) seg = mid < segments[0].start ? 0 : segments.length - 1;
+      return {
+        id: e.id, start: e.t, end, text: String(e.text).trim(), seg, speakerId: seg >= 0 ? segments[seg].speakerId : null,
+      };
+    });
+}
+
+// Testo riconosciuto per ogni segmento (stesso ordine dei segmenti)
+export function segmentTexts(segments, items) {
+  const out = segments.map(() => []);
+  for (const it of items) if (it.seg >= 0) out[it.seg].push(it.text);
+  return out.map((list) => list.join(' '));
+}
+
 // Tempo di parola per partecipante (solo tratti con audio registrato)
 export function talkTime(segments, participants) {
   const total = segments.filter((s) => s.speakerId && s.part !== null)

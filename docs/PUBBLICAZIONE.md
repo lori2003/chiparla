@@ -50,11 +50,13 @@ gh api -X POST repos/TUO-UTENTE/chiparla/pages -f "source[branch]=main" -f "sour
 
 ## 3. Installazione sull'iPhone
 
-1. Apri **Safari** e vai a `https://TUO-UTENTE.github.io/chiparla/` (con internet, la prima volta).
-2. Tocca **Condividi** (quadrato con la freccia) → **Aggiungi alla schermata Home** (se non lo vedi, scorri l'elenco o tocca "Altro"). Su iOS 26 lascia attivo **Apri come app web**. Tocca **Aggiungi**.
-3. Apri ChiParla dall'icona. La prima volta che registri iOS chiede il permesso per il microfono: **Consenti**.
+L'indirizzo di questa installazione è **https://lori2003.github.io/chiparla/**.
+
+1. Apri **Safari** e vai all'indirizzo (con internet, la prima volta).
+2. Per avere un'icona: tocca **Condividi** (quadrato con la freccia) → **Aggiungi alla schermata Home** (se non lo vedi, scorri l'elenco o tocca "Altro"). Su iOS 26 **disattiva «Apri come app web»**: così l'icona apre ChiParla in Safari, dove funziona la trascrizione in diretta. Tocca **Aggiungi**. (Su versioni precedenti di iOS l'icona apre sempre l'app web: in quel caso usa un segnalibro di Safari.)
+3. Alla prima registrazione iOS chiede i permessi per il microfono e per il riconoscimento vocale: **Consenti**. Per non ripetere la domanda del microfono: *aA → Impostazioni sito web → Microfono → Consenti*.
 4. Apri **Diagnostica** e fai le prove di [TEST.md](TEST.md).
-5. Da questo momento l'app funziona anche senza internet (anche in modalità aereo).
+5. La registrazione funziona anche senza internet (anche in modalità aereo); la trascrizione in diretta di solito richiede internet.
 
 ### Safari o app dalla Home?
 
@@ -62,6 +64,7 @@ Hanno **archivi separati**: le riunioni registrate in una non si vedono nell'alt
 
 | | Safari (scheda) | App dalla schermata Home |
 |---|---|---|
+| **Trascrizione in diretta** | **sì** | **no** (iOS la consente solo in Safari) |
 | Schermo intero, senza barra di Safari | no | sì (meno tocchi accidentali) |
 | Schermo sempre acceso (Wake Lock) | da iOS 16.4 | da **iOS 18.4** |
 | Dati protetti dalla pulizia automatica di Safari | no (rischio se non apri il sito per molti giorni) | sì |
@@ -69,7 +72,7 @@ Hanno **archivi separati**: le riunioni registrate in una non si vedono nell'alt
 | Pulsante «Scarica» | funziona (cartella Download) | poco affidabile: usa «Condividi» |
 | Registrazione con app in background o schermo bloccato | **non affidabile** | **non affidabile** |
 
-**Consiglio:** app dalla schermata Home se hai iOS 18.4 o successivo; altrimenti Safari. Se puoi, ripeti la prova "schermo bloccato" della Diagnostica in entrambe e tieni quella che si comporta meglio sul tuo iPhone.
+**Consiglio:** usa **Safari** (anche tramite l'icona con «Apri come app web» disattivato), perché è l'unico modo per avere la trascrizione in diretta. Esporta dopo ogni riunione, così la pulizia automatica di Safari non è un problema. L'app web dalla Home ha senso solo se rinunci alla trascrizione in diretta (per esempio in modalità "solo timeline" con Memo Vocali).
 
 ## 4. Pubblicare un aggiornamento
 
