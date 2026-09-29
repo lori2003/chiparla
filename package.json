@@ -1,0 +1,11 @@
+{
+  "name": "chiparla",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web app per iPhone: registra una riunione e segna con un tocco chi parla. Nessun server, solo GitHub Pages.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\"",
+    "serve": "node tools/serve.mjs"
+  }
+}
