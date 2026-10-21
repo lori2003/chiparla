@@ -6,7 +6,6 @@ import * as db from '../db.js';
 import { session, finalizeInterrupted } from '../session.js';
 import { haptic } from '../haptics.js';
 import { fmtTime, fmtClock, fmtDuration, textColorFor } from '../util.js';
-import { sortEvents } from '../timeline.js';
 import { STATE_TEXT } from '../transcriber.js';
 
 const ACTION_LABEL = {
@@ -167,10 +166,7 @@ export async function renderRecord(root, id) {
 
   // Chi aveva la parola in un certo istante (ultimo tocco prima di quel momento)
   function speakerAtTime(t) {
-    let id = null;
-    for (const e of sortEvents(session.events.filter((x) => x.type === 'speaker'))) {
-      if (e.t <= t) id = e.speakerId; else break;
-    }
+    const id = session.speakerIdAt(t);
     return session.meeting.participants.find((p) => p.id === id) ?? null;
   }
 
@@ -187,8 +183,7 @@ export async function renderRecord(root, id) {
     }
     liveState.textContent = STATE_TEXT[t.state] ?? t.state;
     liveState.classList.toggle('on', t.active);
-    const speech = session.events.filter((e) => e.type === 'speech');
-    const last = speech[speech.length - 1];
+    const last = session.eventIndex.lastSpeech;
     const interim = session.interim;
     if (!last && !interim) {
       liveBody.replaceChildren(h('span', { class: 'live-muted' }, t.active
@@ -247,7 +242,7 @@ export async function renderRecord(root, id) {
     const now = Date.now();
     const el = session.elapsed(now);
     timerEl.textContent = fmtTime(el);
-    const lastSp = sortEvents(session.events.filter((e) => e.type === 'speaker')).pop();
+    const lastSp = session.eventIndex.lastSpeaker;
     currentSince.textContent = lastSp ? `da ${fmtClock(el - lastSp.t)}` : '';
     if (session.external) saveEl.textContent = '🎙 audio con un\'altra app';
     else {

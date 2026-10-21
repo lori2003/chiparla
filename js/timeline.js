@@ -190,8 +190,9 @@ export function effectiveParts(meeting, endSec) {
 // Fine della riunione: fine dichiarata, altrimenti il massimo fra parti ed eventi
 export function meetingEnd(meeting, events = []) {
   if (meeting.endSec != null) return meeting.endSec;
-  const partsEnd = Math.max(0, ...(meeting.parts ?? []).map((p) => p.endSec ?? p.startSec ?? 0));
-  const evEnd = Math.max(0, ...events.map((e) => e.t));
+  // reduce e non Math.max(...): con riunioni di ore gli eventi possono essere decine di migliaia
+  const partsEnd = (meeting.parts ?? []).reduce((acc, p) => Math.max(acc, p.endSec ?? p.startSec ?? 0), 0);
+  const evEnd = events.reduce((acc, e) => Math.max(acc, e.t), 0);
   return Math.max(partsEnd, evEnd);
 }
 

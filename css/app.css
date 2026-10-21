@@ -293,6 +293,8 @@ textarea { resize: vertical; min-height: 96px; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .ev { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+/* riunioni di ore = migliaia di righe: il browser impagina solo quelle vicine allo schermo */
+.ev { content-visibility: auto; contain-intrinsic-size: auto 50px; }
 .ev-time { font: inherit; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; background: var(--surface-2); color: var(--text); border: none; border-radius: 9px; padding: 8px; min-height: 42px; }
 .ev-body { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 42px; padding: 4px; text-align: left; font: inherit; color: inherit; background: none; border: none; overflow: hidden; }
 .ev-body > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

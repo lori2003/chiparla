@@ -20,9 +20,13 @@ export class ScreenWake {
     if (!this.supported || this.active || this.pending || document.visibilityState !== 'visible') return this.active;
     this.pending = true;
     try {
-      this.sentinel = await navigator.wakeLock.request('screen');
-      this.sentinel.addEventListener('release', () => {
-        this.sentinel = null;
+      const s = await navigator.wakeLock.request('screen');
+      // richiesta arrivata dopo release() (fine registrazione): non serve più
+      if (!this.wanted) { s.release().catch(() => {}); return false; }
+      this.sentinel = s;
+      s.addEventListener('release', () => {
+        // il rilascio di un blocco vecchio non deve cancellare quello nuovo
+        if (this.sentinel === s) this.sentinel = null;
         this.onchange?.();
       });
       this.error = null;

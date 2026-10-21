@@ -16,12 +16,23 @@ import { ScreenWake } from './wakelock.js';
 import { getSettings } from './settings.js';
 import { isStandalone } from './env.js';
 import { uid, extForMime, nextColor } from './util.js';
-import { currentSpeakerId } from './timeline.js';
+import { sortEvents } from './timeline.js';
 import { LiveTranscriber, transcriptionSupport } from './transcriber.js';
 
 // Pezzi che non è stato possibile scrivere su IndexedDB: restano in memoria fino all'esportazione
 const memoryChunks = [];
 export const getMemoryChunks = (meetingId, part) => memoryChunks.filter((c) => c.meetingId === meetingId && c.part === part);
+
+// Riprova a scrivere su disco i pezzi rimasti in memoria (es. dopo una perdita temporanea della connessione a IndexedDB)
+async function flushMemoryChunks(meetingId) {
+  for (const c of memoryChunks.filter((x) => x.meetingId === meetingId)) {
+    try {
+      await db.putChunk(c);
+      memoryChunks.splice(memoryChunks.indexOf(c), 1);
+    } catch { return false; }
+  }
+  return true;
+}
 
 const REASONS = {
   start: 'inizio',
@@ -63,13 +74,53 @@ class RecordingSession extends EventTarget {
     this.transcriber = null;
     this.interim = '';
     this.transcribeInfo = null; // perché la trascrizione non è disponibile, se non lo è
+    this.tasks = new Set(); // riprese, riavvii e rotazioni in corso: lo Stop li aspetta
+    this.idx = null;
+    this.autoResumeTries = 0;
+    this.nextAutoResumeAt = 0;
+    this.lastAutoRestartAt = 0;
+    this.wakeRetryAt = 0;
+    this.meterRetryAt = 0;
   }
 
   get active() { return this.status !== 'idle'; }
 
   get track() { return this.stream?.getAudioTracks()[0] ?? null; }
 
-  get currentSpeakerId() { return currentSpeakerId(this.events); }
+  // Indice degli eventi ricalcolato solo quando cambiano: dopo ore di registrazione sono migliaia
+  // e l'interfaccia li consulta più volte al secondo
+  get eventIndex() {
+    const ev = this.events;
+    if (this.idx?.ref !== ev || this.idx.len !== ev.length) {
+      const speakers = sortEvents(ev.filter((e) => e.type === 'speaker'));
+      let lastSpeech = null;
+      for (let i = ev.length - 1; i >= 0; i--) if (ev[i].type === 'speech') { lastSpeech = ev[i]; break; }
+      this.idx = { ref: ev, len: ev.length, speakers, lastSpeaker: speakers[speakers.length - 1] ?? null, lastSpeech };
+    }
+    return this.idx;
+  }
+
+  get currentSpeakerId() { return this.eventIndex.lastSpeaker?.speakerId ?? null; }
+
+  // Chi aveva la parola in un certo istante (ultimo tocco prima di quel momento)
+  speakerIdAt(t) {
+    const sp = this.eventIndex.speakers;
+    let lo = 0;
+    let hi = sp.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sp[mid].t <= t) lo = mid + 1; else hi = mid;
+    }
+    return lo ? sp[lo - 1].speakerId : null;
+  }
+
+  // Operazioni asincrone che lo Stop deve lasciar finire (altrimenti potrebbero riaprire
+  // il registratore dopo la chiusura della sessione)
+  runTask(promise) {
+    this.tasks.add(promise);
+    promise.finally(() => this.tasks.delete(promise)).catch(() => {});
+    return promise;
+  }
 
   emit() { this.dispatchEvent(new Event('change')); }
 
@@ -212,7 +263,7 @@ class RecordingSession extends EventTarget {
       mimeType,
       bitrate: this.settings.bitrate,
       timesliceMs: this.settings.timesliceMs,
-      onChunk: (blob) => this.saveChunk(part, seq++, blob),
+      onChunk: (blob) => this.saveChunk(m, part, seq++, blob),
       onError: (err) => this.addSys('error', `Errore del registratore: ${err?.name || err?.message || err}`),
       onStop: (r) => this.onRecorderStopped(r),
     });
@@ -229,7 +280,7 @@ class RecordingSession extends EventTarget {
     this.part = part;
     this.partStartedAtMs = startedAtMs;
     this.lastChunkAt = null;
-    this.status = 'recording';
+    if (this.status !== 'stopping') this.status = 'recording'; // durante lo Stop questa parte verrà chiusa subito
     await db.putMeeting(m);
     await this.addSys(part.n === 1 ? 'start' : 'part-start',
       part.n === 1 ? 'Inizio registrazione' : `Inizio file audio ${part.n} (${REASONS[reason] ?? reason})`);
@@ -239,25 +290,28 @@ class RecordingSession extends EventTarget {
 
   // ---------- salvataggio audio ----------
 
-  saveChunk(part, seq, blob) {
+  // `m` è la riunione della parte: un ultimo pezzo può arrivare anche dopo lo Stop
+  saveChunk(m, part, seq, blob) {
     const at = Date.now();
-    const m = this.meeting;
     part.bytes += blob.size;
     part.chunks += 1;
     part.lastChunkAt = at;
     if (part === this.part) this.lastChunkAt = at;
     const chunk = { meetingId: m.id, part: part.n, seq, data: blob, size: blob.size, at };
+    // a sessione chiusa la riunione non si riscrive: la schermata Timeline potrebbe averla già aggiornata
+    const current = this.meeting === m;
     this.saveChain = this.saveChain.then(async () => {
       try {
-        await db.putChunk(chunk, m);
-        this.clearWarning('save');
+        await db.putChunk(chunk, current ? m : null);
+        if (memoryChunks.length) await flushMemoryChunks(m.id);
+        if (!memoryChunks.some((c) => c.meetingId === m.id)) this.clearWarning('save');
       } catch (e) {
         memoryChunks.push(chunk);
         this.setWarning('save', e?.name === 'QuotaExceededError'
           ? 'Spazio del telefono esaurito: l\'audio resta solo in memoria. Ferma ed esporta appena puoi.'
           : `Salvataggio non riuscito (${e?.name || e}): l'audio resta solo in memoria, non chiudere Safari.`, 'error');
       }
-      if (seq === 0) await this.inspectFirstChunk(part, blob);
+      if (seq === 0 && current) await this.inspectFirstChunk(part, blob);
     });
   }
 
@@ -391,65 +445,100 @@ class RecordingSession extends EventTarget {
     this.markInterrupted('Il registratore si è fermato.');
   }
 
-  async markInterrupted(reason) {
-    if (this.status !== 'recording') return;
+  markInterrupted(reason) {
+    if (this.status !== 'recording') return Promise.resolve();
     this.status = 'interrupted';
     this.setWarning('interrupted', `${reason} Registrazione ferma: tocca «Riprendi».`, 'error', 'resume');
+    // Tentativo automatico subito, poi altri ogni 10-60 s (watchdog) finché l'app è visibile;
+    // resta comunque il pulsante «Riprendi»
+    this.autoResumeTries = 0;
+    this.nextAutoResumeAt = Date.now() + 10000;
+    const m = this.meeting;
     const part = this.part;
-    await this.saveChain;
-    if (part?.status === 'recording') {
-      part.endSec = part.lastChunkAt ? this.elapsed(part.lastChunkAt) : this.elapsed();
-      part.status = 'interrupted';
-      await db.putMeeting(this.meeting);
-    }
-    this.emit();
-    // Tentativo automatico: se iOS lo rifiuta senza un tocco, resta il pulsante «Riprendi»
-    if (document.visibilityState === 'visible') this.resume('auto-resume');
+    const rec = this.rec;
+    return this.runTask((async () => {
+      // si chiude il registratore vecchio: il suo ultimo pezzo arriva e la fine del file risulta esatta
+      await rec?.stop(2000);
+      await this.saveChain;
+      if (part?.status === 'recording') {
+        part.endSec = part.lastChunkAt ? this.elapsed(part.lastChunkAt) : this.elapsed();
+        part.status = 'interrupted';
+        await db.putMeeting(m).catch(() => {});
+      }
+      this.emit();
+      if (document.visibilityState === 'visible') this.resume('auto-resume');
+    })());
   }
 
   // Riprende in una nuova parte (nuovo file audio). reason 'resume' = tocco dell'utente.
-  async resume(reason = 'resume') {
-    if (this.resuming || !this.meeting || this.status === 'recording' || this.status === 'stopping') return;
+  resume(reason = 'resume') {
+    if (this.resuming || this.restarting || !this.meeting || this.status === 'recording' || this.status === 'stopping') return Promise.resolve();
     this.resuming = true;
     if (reason !== 'auto-resume') this.prepareInGesture();
     this.emit();
-    try {
-      if (!this.track || this.track.readyState !== 'live') await this.openMic();
-      await this.startPart(reason);
-      this.clearWarning('interrupted');
-      this.clearWarning('muted');
-      this.clearWarning('nodata');
-    } catch (e) {
-      this.status = 'interrupted';
-      this.setWarning('interrupted', `Registrazione ferma: tocca «Riprendi». (${e?.message || e})`, 'error', 'resume');
-    } finally {
-      this.resuming = false;
-      this.emit();
-    }
+    return this.runTask((async () => {
+      try {
+        if (!this.track || this.track.readyState !== 'live') await this.openMic();
+        if (this.status === 'stopping') return; // Stop toccato nel frattempo: nessun nuovo file
+        await this.startPart(reason);
+        this.autoResumeTries = 0;
+        this.clearWarning('interrupted');
+        this.clearWarning('muted');
+        this.clearWarning('nodata');
+      } catch (e) {
+        if (this.status === 'stopping') return;
+        this.status = 'interrupted';
+        this.setWarning('interrupted', `Registrazione ferma: tocca «Riprendi». (${e?.message || e})`, 'error', 'resume');
+      } finally {
+        this.resuming = false;
+        this.emit();
+      }
+    })());
   }
 
   // Chiude il file corrente e riparte con un nuovo accesso al microfono
-  async restartMic() {
-    if (this.status !== 'recording') { await this.resume('resume'); return; }
+  restartMic() {
+    if (this.status !== 'recording') return this.resume('resume');
+    if (this.restarting || this.rotating) return Promise.resolve();
+    this.restarting = true;
     this.prepareInGesture();
     this.status = 'interrupted';
-    const rec = this.rec;
-    const part = this.part;
-    await rec?.stop();
-    await this.saveChain;
-    if (part?.status === 'recording') {
-      part.endSec = this.elapsed();
-      part.status = 'done';
-    }
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    await db.putMeeting(this.meeting);
-    await this.resume('restart-mic');
+    return this.runTask((async () => {
+      try {
+        const rec = this.rec;
+        const part = this.part;
+        await rec?.stop();
+        await this.saveChain;
+        if (part?.status === 'recording') {
+          part.endSec = this.elapsed();
+          part.status = 'done';
+        }
+        this.stream?.getTracks().forEach((t) => t.stop());
+        this.stream = null;
+        await db.putMeeting(this.meeting);
+      } catch { /* si riparte comunque con un nuovo file */ } finally {
+        this.restarting = false;
+      }
+      this.nextAutoResumeAt = Date.now() + 10000;
+      await this.resume('restart-mic');
+    })());
+  }
+
+  // Riavvio del microfono senza tocco, quando l'audio non arriva più da un po' (al massimo una volta al minuto)
+  autoRestart(now, why) {
+    if (now - this.lastAutoRestartAt < 60000 || this.restarting || this.rotating || this.resuming) return;
+    this.lastAutoRestartAt = now;
+    this.addSys('auto-restart', `Riavvio automatico del microfono (${why})`);
+    this.restartMic();
   }
 
   // Nuovo file senza buchi: parte il nuovo registratore, poi si ferma il vecchio
-  async rotatePart() {
-    if (this.rotating || this.status !== 'recording') return;
+  rotatePart() {
+    if (this.rotating || this.restarting || this.status !== 'recording') return Promise.resolve();
+    return this.runTask(this.doRotatePart());
+  }
+
+  async doRotatePart() {
     this.rotating = true;
     const oldRec = this.rec;
     const oldPart = this.part;
@@ -475,11 +564,33 @@ class RecordingSession extends EventTarget {
     const now = Date.now();
     this.meter?.sample();
     this.transcriber?.watchdog(now);
-    if (this.status === 'recording' && document.visibilityState === 'visible') {
-      this.checkScreen();
-      if (!this.external) this.checkAudio(now);
+    if (document.visibilityState === 'visible') {
+      this.selfHeal(now);
+      if (this.status === 'recording') {
+        this.checkScreen();
+        if (!this.external) this.checkAudio(now);
+      }
     }
     this.dispatchEvent(new Event('tick'));
+  }
+
+  // Riattiva da sé ciò che iOS può spegnere durante una riunione lunga (notifiche, chiamate, Siri,
+  // risparmio energetico) senza aspettare un tocco dell'utente
+  selfHeal(now) {
+    if (this.status === 'stopping') return;
+    if (this.wake.wanted && !this.wake.active && now - this.wakeRetryAt > 10000) {
+      this.wakeRetryAt = now;
+      this.wake.request();
+    }
+    if (this.meter && !this.meter.running && now - this.meterRetryAt > 5000) {
+      this.meterRetryAt = now;
+      this.meter.resume();
+    }
+    if (this.status === 'interrupted' && !this.external && !this.resuming && !this.restarting && now >= this.nextAutoResumeAt) {
+      this.autoResumeTries += 1;
+      this.nextAutoResumeAt = now + Math.min(60000, 10000 * this.autoResumeTries);
+      this.resume('auto-resume');
+    }
   }
 
   checkScreen() {
@@ -498,6 +609,7 @@ class RecordingSession extends EventTarget {
           this.setWarning('nodata', 'Questo browser non salva l\'audio a pezzi: verrà salvato solo con Stop. Non chiudere l\'app.', 'warn', 'dismiss');
         } else {
           this.setWarning('nodata', `Nessun audio salvato da ${Math.round(since / 1000)} s.`, 'error', 'restart-mic');
+          if (since > Math.max(30000, ts * 6)) this.autoRestart(now, 'nessun audio salvato');
         }
       } else if (this.warnings.get('nodata')?.action === 'restart-mic') {
         this.clearWarning('nodata');
@@ -510,6 +622,7 @@ class RecordingSession extends EventTarget {
     } else if (track?.muted) {
       this.mutedSince ??= now;
       if (now - this.mutedSince > 5000) this.setWarning('muted', 'iOS ha sospeso il microfono. Se non riparte da solo, tocca «Riavvia microfono».', 'error', 'restart-mic');
+      if (now - this.mutedSince > 20000) this.autoRestart(now, 'microfono sospeso');
     }
     // silenzio assoluto prolungato?
     if (this.meter?.running) {
@@ -532,21 +645,18 @@ class RecordingSession extends EventTarget {
     this.status = 'stopping';
     this.emit();
     clearInterval(this.timer);
+    // una ripresa o un riavvio in corso finisce prima: la parte che apre viene chiusa qui sotto
+    while (this.tasks.size) await Promise.allSettled([...this.tasks]);
     await this.rec?.stop();
     await this.saveChain;
     const part = this.part;
     if (part?.status === 'recording') {
-      part.endSec = stopSec;
+      part.endSec = Math.max(part.startSec ?? 0, stopSec);
       part.status = 'done';
     }
     // ultimo tentativo di scrivere su disco i pezzi rimasti in memoria
-    for (const c of memoryChunks.filter((x) => x.meetingId === m.id)) {
-      try {
-        await db.putChunk(c);
-        memoryChunks.splice(memoryChunks.indexOf(c), 1);
-      } catch { break; }
-    }
-    m.endSec = stopSec;
+    await flushMemoryChunks(m.id);
+    m.endSec = Math.max(stopSec, part?.endSec ?? 0);
     m.status = 'stopped';
     m.stoppedAt = Date.now();
     await this.addSys('stop', 'Fine registrazione');
@@ -596,7 +706,7 @@ export async function finalizeInterrupted(meeting, { stop = false } = {}) {
   meeting.parts = kept;
   if (stop) {
     const events = await db.getEvents(meeting.id);
-    meeting.endSec = Math.max(0, ...kept.map((p) => p.endSec ?? 0), ...events.map((e) => e.t));
+    meeting.endSec = [...kept.map((p) => p.endSec ?? 0), ...events.map((e) => e.t)].reduce((a, b) => Math.max(a, b), 0);
     meeting.status = 'stopped';
     meeting.stoppedAt = Date.now();
   }

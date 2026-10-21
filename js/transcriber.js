@@ -45,22 +45,36 @@ export class LiveTranscriber {
     this.lastEventAt = 0;
     this.finals = 0;
     this.errors = [];
-    const R = fakeMode() ? FakeRecognition : Recognition();
-    if (!R) { this.state = 'disabled'; this.reason = 'non supportata'; return; }
-    // Un'unica istanza riutilizzata: su iOS ricrearla a ogni frase fa suonare il segnale della dettatura
-    this.rec = new R();
-    this.rec.lang = lang;
+    this.stateAt = Date.now();
+    this.quickEnds = 0; // sessioni chiuse subito e senza testo, una dopo l'altra
+    this.lang = lang;
+    this.R = fakeMode() ? FakeRecognition : Recognition();
+    if (!this.R) { this.state = 'disabled'; this.reason = 'non supportata'; return; }
+    this.createRec();
+  }
+
+  // Un'unica istanza riutilizzata: su iOS ricrearla a ogni frase fa suonare il segnale della dettatura.
+  // Si ricrea solo se smette di funzionare (dopo molte sessioni chiuse subito senza testo).
+  createRec() {
+    if (this.rec) {
+      this.rec.onstart = this.rec.onspeechstart = this.rec.onresult = this.rec.onerror = this.rec.onend = null;
+      try { this.rec.abort(); } catch { /* ignora */ }
+    }
+    this.rec = new this.R();
+    this.rec.lang = this.lang;
     this.rec.continuous = false;
     this.rec.interimResults = true;
     this.rec.maxAlternatives = 1;
     this.rec.onstart = () => {
       this.sessionAt = Date.now();
       this.lastEventAt = Date.now();
+      this.heard = false;
       this.setState('listening');
     };
     this.rec.onspeechstart = () => {
       this.speechAt ??= Date.now();
       this.lastEventAt = Date.now();
+      this.heard = true;
     };
     this.rec.onresult = (e) => this.handleResult(e);
     this.rec.onerror = (e) => this.handleError(e);
@@ -71,6 +85,7 @@ export class LiveTranscriber {
 
   setState(s, reason = null) {
     if (this.state === 'disabled' && s !== 'off') return;
+    if (s !== this.state) this.stateAt = Date.now();
     this.state = s;
     if (reason) this.reason = reason;
     this.onState?.(s);
@@ -86,6 +101,7 @@ export class LiveTranscriber {
   begin(fromGesture = false) {
     if (!this.wanted || document.visibilityState !== 'visible') return;
     this.lastBeginFromGesture = fromGesture;
+    this.beganAt = Date.now();
     try {
       this.rec.start();
       this.setState('starting');
@@ -102,6 +118,9 @@ export class LiveTranscriber {
 
   handleResult(e) {
     this.lastEventAt = Date.now();
+    this.heard = true;
+    // risultati da una sessione partita mentre lo stato diceva altro (es. dopo un riavvio dal watchdog)
+    if (this.wanted && !this.active) this.setState('listening');
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
@@ -135,6 +154,7 @@ export class LiveTranscriber {
     this.lastEventAt = Date.now();
     if (err === 'no-speech' || err === 'aborted') return; // silenzio o interruzione voluta
     this.errors.push(err);
+    if (this.errors.length > 50) this.errors.shift(); // in una riunione di ore non deve crescere senza fine
     if (err === 'not-allowed' || err === 'service-not-allowed') {
       // senza un tocco iOS può rifiutare: si riprova al primo tocco prima di considerarlo un rifiuto
       if (!this.lastBeginFromGesture && err === 'not-allowed') { this.setState('paused'); return; }
@@ -156,7 +176,14 @@ export class LiveTranscriber {
     if (document.visibilityState !== 'visible') { this.setState('paused'); return; }
     const retryLater = this.state === 'offline' || this.state === 'error';
     if (!retryLater) this.setState('waiting');
-    setTimeout(() => this.begin(), retryLater ? 10000 : 250);
+    // Se il riconoscimento si chiude subito senza sentire nulla, una sessione dopo l'altra,
+    // si rallenta (fino a 8 s) per non girare a vuoto per ore consumando batteria
+    const quick = !this.heard && Date.now() - (this.beganAt ?? 0) < 1500;
+    this.quickEnds = quick ? this.quickEnds + 1 : 0;
+    if (this.quickEnds === 10) this.createRec();
+    const delay = retryLater ? 10000 : this.quickEnds > 2 ? Math.min(8000, 250 * 2 ** (this.quickEnds - 2)) : 250;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => this.begin(), delay);
   }
 
   // Chiamato ogni secondo: sblocca il riconoscimento se resta "in ascolto" senza dare segni di vita
@@ -166,6 +193,14 @@ export class LiveTranscriber {
     if (stuck) {
       try { this.rec.abort(); } catch { /* ignora */ }
       if (this.state === 'starting') this.setState('paused');
+      return;
+    }
+    // Ferma da tempo senza che sia ripartita (es. "end" mai arrivato, o serviva un tocco che non c'è stato):
+    // nuovo tentativo ogni 15 s mentre l'app è visibile
+    if (this.wanted && ['paused', 'error', 'offline'].includes(this.state) && now - this.stateAt > 15000
+        && document.visibilityState === 'visible') {
+      this.stateAt = now;
+      this.begin();
     }
   }
 
@@ -182,6 +217,7 @@ export class LiveTranscriber {
 
   stop() {
     this.wanted = false;
+    clearTimeout(this.retryTimer);
     this.flush();
     try { this.rec?.abort(); } catch { /* ignora */ }
     if (this.state !== 'disabled' && this.state !== 'denied') this.setState('off');
