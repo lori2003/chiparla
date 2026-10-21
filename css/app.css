@@ -204,7 +204,7 @@ textarea { resize: vertical; min-height: 96px; }
   user-select: none;
   -webkit-touch-callout: none;
 }
-.rec-top { display: grid; grid-template-columns: 88px 1fr 88px; align-items: center; }
+.rec-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 .rec-status { display: flex; align-items: center; gap: 6px; font-weight: 800; letter-spacing: .08em; color: #ff5b52; font-size: 15px; }
 .rec-dot { width: 14px; height: 14px; border-radius: 50%; background: #ff3b30; animation: blink 1.2s ease-in-out infinite; }
 .rec-status[data-state="interrupted"] { color: #ffb74d; }
@@ -213,7 +213,7 @@ textarea { resize: vertical; min-height: 96px; }
 .rec-status[data-state="stopping"] { color: #aaa; }
 .rec-status[data-state="starting"] .rec-dot,
 .rec-status[data-state="stopping"] .rec-dot { background: #888; }
-.rec-timer { text-align: center; font-size: clamp(40px, 13vw, 66px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; line-height: 1.1; }
+.rec-timer { text-align: center; white-space: nowrap; font-size: clamp(32px, 10.5vw, 66px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; line-height: 1.1; }
 .icon-btn { justify-self: end; width: 46px; height: 46px; border-radius: 50%; border: 1px solid #333; background: #16181c; color: #fff; font-size: 24px; touch-action: manipulation; }
 .rec-health { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; font-size: 12px; color: #9aa0a6; }
 .rec-health .bad { color: #ffb74d; }
@@ -339,6 +339,9 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 .seg { display: flex; gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; }
 .seg button { flex: 1; font: inherit; font-size: 14px; font-weight: 600; min-height: 40px; border: none; border-radius: 9px; background: none; color: var(--text); }
 .seg button.on { background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+.seg button.off { opacity: .55; }
+.ev-about { color: var(--c); margin-right: 2px; }
+.note-warn { color: var(--warn); background: var(--warn-bg); border-radius: 10px; padding: 8px 10px; font-weight: 600; }
 .speaker-pick { display: flex; flex-wrap: wrap; gap: 6px; }
 .pick { font: inherit; font-weight: 600; min-height: 44px; padding: 6px 14px; border-radius: 12px; border: 2px solid var(--c); background: var(--surface); color: var(--text); }
 .pick.on { background: var(--c); color: var(--fg); }
@@ -389,3 +392,5 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 .backup-progress span { display: block; height: 100%; width: 0; background: var(--primary); transition: width .2s; }
 .backup-ok { color: var(--ok); font-weight: 600; }
 .backup-bad { color: var(--bad); font-weight: 600; }
+
+.topbar-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

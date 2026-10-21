@@ -197,8 +197,10 @@ export async function renderEdit(root, id) {
         h('span', { class: 'muted small' }, i?.dup ? ' (ripetuto)' : ` → ${fmtTime(i.until)} · ${fmtClock(i.until - e.t)}`),
       ];
     } else {
+      const about = e.type === 'note' && e.aboutId ? partOf(e.aboutId) : null;
       content = [
         h('span', { class: 'ev-ico' }, e.type === 'note' ? '✎' : '★'),
+        about ? h('strong', { class: 'ev-about', style: { '--c': about.color } }, `su ${about.name}: `) : null,
         h('span', {}, e.text || (e.type === 'mark' ? 'Momento importante' : '(nota vuota)')),
       ];
     }
@@ -270,6 +272,9 @@ export async function renderEdit(root, id) {
     const text = h('textarea', { rows: 3, placeholder: 'Testo' });
     text.value = draft.text || '';
     const textField = h('label', { class: 'field' }, h('span', {}, 'Testo'), text);
+    // nota generale o su un partecipante
+    const aboutRow = h('div', { class: 'speaker-pick' });
+    const aboutField = h('div', { class: 'field' }, h('span', {}, 'La nota riguarda'), aboutRow);
 
     const refresh = () => {
       typeRow.replaceChildren(...TYPES.map(([v, label]) => h('button', {
@@ -277,6 +282,15 @@ export async function renderEdit(root, id) {
       }, label)));
       speakerRow.hidden = draft.type !== 'speaker';
       textField.hidden = draft.type === 'speaker';
+      aboutField.hidden = draft.type !== 'note';
+      aboutRow.replaceChildren(
+        h('button', { type: 'button', class: `pick${draft.aboutId ? '' : ' on'}`, style: { '--c': '#888', '--fg': '#fff' }, onclick: () => { draft.aboutId = null; refresh(); } }, '📝 Tutta la riunione'),
+        ...meeting.participants.map((p) => h('button', {
+          type: 'button',
+          class: `pick${draft.aboutId === p.id ? ' on' : ''}`,
+          style: { '--c': p.color, '--fg': textColorFor(p.color) },
+          onclick: () => { draft.aboutId = p.id; refresh(); },
+        }, p.name)));
       speakerRow.replaceChildren(...meeting.participants.map((p) => h('button', {
         type: 'button',
         class: `pick${draft.speakerId === p.id ? ' on' : ''}`,
@@ -300,6 +314,7 @@ export async function renderEdit(root, id) {
           }, '⏱ Posizione audio') : null)),
       h('div', { class: 'field' }, h('span', {}, 'Tipo'), typeRow),
       speakerRow,
+      aboutField,
       textField);
 
     openModal({
@@ -321,6 +336,7 @@ export async function renderEdit(root, id) {
             if (draft.type === 'note' && !text.value.trim()) { toast('Scrivi il testo della nota'); return false; }
             const saved = { ...draft, t, updatedAt: Date.now(), edited: true };
             if (draft.type === 'speaker') delete saved.text; else { saved.text = text.value.trim(); delete saved.speakerId; }
+            if (draft.type !== 'note' || !saved.aboutId) delete saved.aboutId;
             await db.putEvent(saved);
             events = [...events.filter((x) => x.id !== saved.id), saved];
             render();

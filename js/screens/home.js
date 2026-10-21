@@ -6,6 +6,7 @@ import { session, finalizeInterrupted } from '../session.js';
 import { isBackedUp, restoreBackup } from '../backup.js';
 import { fmtDateTime, fmtTime, fmtBytes } from '../util.js';
 import { browserInfo, appVersion, isIOS } from '../env.js';
+import { forceUpdate } from '../update.js';
 
 const rerender = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
 const meetingBytes = (m) => (m.parts ?? []).reduce((acc, p) => acc + (p.deleted ? 0 : p.bytes || 0), 0);
@@ -24,7 +25,9 @@ export async function renderHome(root) {
   root.replaceChildren(h('div', { class: 'screen' },
     h('header', { class: 'topbar' },
       h('h1', { class: 'brand' }, h('span', { class: 'brand-dot', 'aria-hidden': 'true' }), 'ChiParla'),
-      h('a', { class: 'btn ghost small', href: '#/diagnostica' }, 'Diagnostica')),
+      h('div', { class: 'topbar-actions' },
+        session.active ? null : updateButton(),
+        h('a', { class: 'btn ghost small', href: '#/diagnostica' }, 'Diagnostica'))),
     session.active
       ? h('a', { class: 'banner banner-rec', href: `#/rec/${session.meeting.id}` }, '● Registrazione in corso: torna alla registrazione')
       : null,
@@ -47,6 +50,30 @@ export async function renderHome(root) {
       h('p', {}, `Archivio protetto dalla pulizia automatica: ${storage.persisted ? 'sì' : 'non garantito'} `,
         storage.persisted ? null : h('button', { class: 'link', type: 'button', onclick: askPersist }, 'richiedi')),
       h('p', {}, `Aperta come: ${env.standalone ? 'app dalla schermata Home' : 'pagina di Safari'} · versione `, versionEl))));
+}
+
+// Scarica e installa subito l'ultima versione pubblicata (mai durante una registrazione)
+function updateButton() {
+  const btn = h('button', {
+    type: 'button',
+    class: 'btn small secondary',
+    onclick: async () => {
+      if (session.active) { toast('Non si aggiorna durante una registrazione: prima premi Stop.'); return; }
+      const ok = await confirmDialog('Passare all\'ultima versione?',
+        'ChiParla scarica di nuovo tutti i suoi file e si riavvia. Riunioni, audio, backup e impostazioni restano dove sono: non vengono toccati. Senza internet non cambia nulla.',
+        { ok: 'Aggiorna ora' });
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await forceUpdate({ onStep: (t) => { btn.textContent = t; } });
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = '⟳ Ultima versione';
+        toast(e?.message || String(e), { ms: 6000 });
+      }
+    },
+  }, '⟳ Ultima versione');
+  return btn;
 }
 
 async function askPersist() {

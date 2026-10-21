@@ -63,16 +63,69 @@ export async function renderRecord(root, id) {
     type: 'button',
     class: 'act',
     onclick: () => {
-      const at = Date.now(); // il momento della nota è quello del tocco, non del salvataggio
-      const t = session.elapsed(at);
       haptic();
-      promptDialog(`Nota a ${fmtTime(t)}`, { multiline: true, placeholder: 'Scrivi la nota…' }).then((text) => {
-        if (!text) return;
-        session.note(text, at);
-        toast(`Nota salvata (${fmtTime(t)})`);
-      });
+      noteDialog(Date.now()); // il momento della nota è quello del tocco, non del salvataggio
     },
   }, h('span', { class: 'act-ico' }, '✎'), 'Nota');
+
+  // Nota generale o sulla persona che sta parlando (quella selezionata al momento del tocco).
+  // Va aperta dentro il tocco perché iOS mostri la tastiera.
+  let lastScope = 'general';
+  function noteDialog(at) {
+    const t = session.elapsed(at);
+    const cur = session.meeting.participants.find((x) => x.id === session.currentSpeakerId) ?? null;
+    let scope = cur && lastScope === 'person' ? 'person' : 'general';
+    const text = h('textarea', { rows: 4 });
+    const hint = h('p', { class: 'small' });
+    const seg = h('div', { class: 'seg' });
+    const draw = (warnNobody = false) => {
+      seg.replaceChildren(
+        h('button', { type: 'button', class: scope === 'general' ? 'on' : '', onclick: () => { scope = 'general'; draw(); text.focus(); } }, '📝 Generale'),
+        h('button', {
+          type: 'button',
+          class: `${scope === 'person' ? 'on' : ''}${cur ? '' : ' off'}`,
+          onclick: () => {
+            if (!cur) { draw(true); return; }
+            scope = 'person';
+            draw();
+            text.focus();
+          },
+        }, cur ? `👤 Su ${cur.name}` : '👤 Su chi parla'));
+      if (warnNobody) {
+        hint.className = 'small note-warn';
+        hint.textContent = '⚠ Non hai selezionato nessuno. Per una nota su una persona chiudi, tocca il nome di chi parla e poi di nuovo «Nota». Intanto puoi scrivere una nota generale.';
+      } else {
+        hint.className = 'small muted';
+        hint.textContent = scope === 'person'
+          ? `Nota su ${cur.name}: nelle esportazioni compare sotto il suo nome.`
+          : cur ? `Nota sulla riunione. Per una nota solo su ${cur.name} scegli «Su ${cur.name}».`
+            : 'Nota sulla riunione. Per una nota su una persona, seleziona prima chi parla toccando il suo nome.';
+      }
+      text.placeholder = scope === 'person' ? `Cosa vuoi annotare su ${cur.name}?` : 'Scrivi la nota…';
+    };
+    draw();
+    openModal({
+      title: `Nota a ${fmtTime(t)}`,
+      body: h('div', { class: 'edit-form' }, seg, hint, text),
+      actions: [
+        { label: 'Annulla', value: null, class: 'secondary' },
+        {
+          label: 'Salva',
+          class: 'primary',
+          onClick: () => {
+            const v = text.value.trim();
+            if (!v) { toast('Scrivi il testo della nota'); return false; }
+            const about = scope === 'person' ? cur : null;
+            lastScope = scope;
+            session.note(v, at, about?.id ?? null);
+            toast(about ? `Nota su ${about.name} salvata (${fmtTime(t)})` : `Nota salvata (${fmtTime(t)})`);
+            return true;
+          },
+        },
+      ],
+      onOpen: () => text.focus(),
+    });
+  }
 
   const markBtn = h('button', {
     type: 'button',
@@ -294,7 +347,10 @@ export async function renderRecord(root, id) {
 function describe(ev) {
   const t = fmtTime(ev.t);
   if (ev.type === 'speaker') return `${session.meeting?.participants.find((p) => p.id === ev.speakerId)?.name ?? 'speaker'} (${t})`;
-  if (ev.type === 'note') return `nota (${t})`;
+  if (ev.type === 'note') {
+    const about = ev.aboutId ? session.meeting?.participants.find((p) => p.id === ev.aboutId)?.name : null;
+    return about ? `nota su ${about} (${t})` : `nota (${t})`;
+  }
   if (ev.type === 'mark') return `momento importante (${t})`;
   return t;
 }

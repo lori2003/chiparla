@@ -362,7 +362,8 @@ class RecordingSession extends EventTarget {
     return this.addEvent('speaker', { speakerId }, atMs);
   }
 
-  note(text, atMs) { return this.addEvent('note', { text }, atMs); }
+  // aboutId: partecipante a cui si riferisce la nota (null = nota generale)
+  note(text, atMs, aboutId = null) { return this.addEvent('note', aboutId ? { text, aboutId } : { text }, atMs); }
 
   mark(atMs) { return this.addEvent('mark', { text: '' }, atMs); }
 

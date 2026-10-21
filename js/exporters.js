@@ -87,6 +87,8 @@ export function buildModel(meeting, events, { version = '', generatedAt = Date.n
     speaker: nameOf(speakerAt(segs, e.t)),
     text: e.text || '',
     audio_part: partAt(e.t)?.n ?? null,
+    // nota su un partecipante (null = nota generale)
+    about: e.type === 'note' && e.aboutId ? nameOf(e.aboutId) : null,
   });
 
   const audioFiles = parts.map((p) => ({
@@ -156,6 +158,7 @@ export function toJSON(model) {
       time_seconds: round1(e.t),
       time: fmtTime(e.t),
       speaker: e.speakerId ? model.nameOf(e.speakerId) : undefined,
+      about: e.aboutId ? model.nameOf(e.aboutId) : undefined,
       text: e.text || undefined,
       kind: e.kind || undefined,
     })),
@@ -181,7 +184,7 @@ export function toCSV(model) {
     rows.push({ t: s.start_seconds, o: 0, cells: ['segment', s.speaker ?? '', s.start, s.end, s.start_seconds, s.end_seconds, round1(s.end_seconds - s.start_seconds), s.audio_part ?? '', s.text] });
   }
   for (const [type, list, o] of [['highlight', model.highlights, 1], ['note', model.notes, 2]]) {
-    for (const n of list) rows.push({ t: n.time_seconds, o, cells: [type, n.speaker ?? '', n.time, '', n.time_seconds, '', '', n.audio_part ?? '', n.text] });
+    for (const n of list) rows.push({ t: n.time_seconds, o, cells: [type, n.speaker ?? '', n.time, '', n.time_seconds, '', '', n.audio_part ?? '', n.about ? `[su ${n.about}] ${n.text}` : n.text] });
   }
   rows.sort((a, b) => a.t - b.t || a.o - b.o);
   const lines = [CSV_HEADER, ...rows.map((r) => r.cells)].map((r) => r.map(csvCell).join(','));
@@ -220,9 +223,14 @@ export function toTXT(model) {
     L.push('', 'MOMENTI IMPORTANTI');
     for (const h of model.highlights) L.push(`${h.time} — ★${h.text ? ` ${h.text}` : ''} (parlava: ${who(h.speaker)})`);
   }
-  if (model.notes.length) {
-    L.push('', 'NOTE');
-    for (const n of model.notes) L.push(`${n.time} — ${n.text} (parlava: ${who(n.speaker)})`);
+  const { general, byPerson } = groupNotes(model.notes);
+  if (general.length) {
+    L.push('', 'NOTE GENERALI');
+    for (const n of general) L.push(`${n.time} — ${n.text} (parlava: ${who(n.speaker)})`);
+  }
+  for (const [name, list] of byPerson) {
+    L.push('', `NOTE SU ${name.toUpperCase()}`);
+    for (const n of list) L.push(`${n.time} — ${n.text} (parlava: ${who(n.speaker)})`);
   }
   if (model.warnings.length) {
     L.push('', 'AVVISI SULLA REGISTRAZIONE');
@@ -246,6 +254,18 @@ function segmentTable(rows, offset = 0, withFile = false) {
     L.push(`| ${cells.join(' | ')} |`);
   });
   return L;
+}
+
+// Note generali e note su un partecipante, raggruppate per persona (in ordine di tempo)
+function groupNotes(notes) {
+  const general = [];
+  const byPerson = new Map();
+  for (const n of notes) {
+    if (!n.about) { general.push(n); continue; }
+    if (!byPerson.has(n.about)) byPerson.set(n.about, []);
+    byPerson.get(n.about).push(n);
+  }
+  return { general, byPerson };
 }
 
 export function toMarkdown(model) {
@@ -282,7 +302,7 @@ export function toMarkdown(model) {
   L.push('2. Usa la timeline qui sotto per attribuire ogni frase a chi parla: in ogni intervallo aveva la parola la persona indicata.');
   L.push('3. I tempi sono stati segnati a mano in tempo reale, quindi di solito sono **in ritardo di 1-3 secondi** rispetto al vero cambio di voce: se senti il cambio di voce poco prima del tempo indicato, sposta il confine sul cambio di voce ma mantieni l\'attribuzione della timeline.');
   L.push('4. Se dentro un intervallo si sente brevemente un\'altra voce (interruzioni, battute), attribuiscila solo se è chiaro chi parla; altrimenti scrivi [voce non identificata]. Non inventare nomi né contenuti; dove l\'audio non si capisce scrivi [incomprensibile].');
-  L.push('5. Note e momenti importanti riportano il momento in cui sono stati segnati: il contenuto a cui si riferiscono di solito è nei 30-60 secondi precedenti.');
+  L.push('5. Note e momenti importanti riportano il momento in cui sono stati segnati: il contenuto a cui si riferiscono di solito è nei 30-60 secondi precedenti. Le «note sui partecipanti» riguardano la persona indicata (es. un impegno preso, una posizione espressa): usale nella sintesi per quella persona.');
   L.push("6. Poi produci: (a) trascrizione con i nomi; (b) sintesi; (c) decisioni prese; (d) azioni da fare con responsabile e scadenza, se dette; (e) punti aperti; (f) per ogni momento importante, che cosa è stato detto.");
   if (multi) L.push(`7. L'audio è diviso in ${files.length} file: per ognuno trovi più sotto una timeline con i tempi relativi all'inizio di quel file.`);
   L.push('');
@@ -323,10 +343,20 @@ export function toMarkdown(model) {
   else L.push('_Nessuno._');
   L.push('');
 
-  L.push('## Note prese durante la riunione', '');
-  if (model.notes.length) model.notes.forEach((n) => L.push(pointLine(n, '')));
+  const { general, byPerson } = groupNotes(model.notes);
+  L.push('## Note generali', '');
+  if (general.length) general.forEach((n) => L.push(pointLine(n, '')));
   else L.push('_Nessuna._');
   L.push('');
+  if (byPerson.size) {
+    L.push('## Note sui partecipanti', '');
+    L.push('_Note scritte su una persona precisa (quella che parlava quando la nota è stata presa)._', '');
+    for (const [name, list] of byPerson) {
+      L.push(`### ${mdEsc(name)}`, '');
+      list.forEach((n) => L.push(pointLine(n, '')));
+      L.push('');
+    }
+  }
 
   L.push('## Tempo di parola', '');
   L.push('| Partecipante | Tempo | % | Interventi |', '|---|---:|---:|---:|');

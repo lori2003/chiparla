@@ -156,3 +156,16 @@ test('nome base dei file', () => {
   assert.equal(fileBase({ title: 'Àrea / Test!!', startedAt: new Date(2026, 0, 5, 9, 7).getTime() }), '2026-01-05_0907_area-test');
   assert.equal(fileBase({ title: '???', createdAt: new Date(2026, 0, 5, 9, 7).getTime() }), '2026-01-05_0907_riunione');
 });
+
+test('note generali e note su un partecipante', () => {
+  const ev = [...events, { id: 'n2', meetingId: 'r1', type: 'note', t: 150, text: 'Si impegna a mandare il preventivo', aboutId: 'giulia' }];
+  const model = buildModel(meeting, ev);
+  const obj = JSON.parse(toJSON(model));
+  assert.equal(obj.notes[0].about, null);
+  assert.equal(obj.notes[1].about, 'Giulia');
+  const md = toMarkdown(model);
+  assert.match(md, /## Note generali\n\n- \*\*00:01:35\*\* — Budget/);
+  assert.match(md, /## Note sui partecipanti[\s\S]*### Giulia\n\n- \*\*00:02:30\*\* — Si impegna a mandare il preventivo · parlava: Giulia/);
+  assert.match(toTXT(model), /NOTE SU GIULIA\n00:02:30 — Si impegna a mandare il preventivo/);
+  assert.match(toCSV(model), /note,Giulia,00:02:30,,150,,,1,\[su Giulia\] Si impegna a mandare il preventivo/);
+});

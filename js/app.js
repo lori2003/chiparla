@@ -8,6 +8,7 @@ import { renderRecord } from './screens/record.js';
 import { renderEdit } from './screens/edit.js';
 import { renderExport } from './screens/export.js';
 import { renderDiag } from './screens/diag.js';
+import { takeForcedUpdateResult } from './update.js';
 
 const root = document.getElementById('app');
 
@@ -111,3 +112,5 @@ navigator.serviceWorker?.addEventListener('controllerchange', () => {
 
 route();
 registerServiceWorker();
+const forced = takeForcedUpdateResult();
+if (forced) setTimeout(() => toast(`✓ ChiParla aggiornata all'ultima versione${forced !== '?' ? ` (${forced})` : ''}`), 400);
