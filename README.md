@@ -13,9 +13,10 @@ Online: **https://lori2003.github.io/chiparla/**
 
 1. **Nuova riunione** → titolo e partecipanti (anche più nomi insieme: `Marco, Giulia, Luca`); lascia attiva la **trascrizione in diretta**.
 2. **Avvia registrazione** → timer grande, REC, barra del microfono che si muove con le voci, **testo in diretta**, pulsanti enormi con i nomi.
-3. Quando cambia chi parla **tocchi il suo nome**: il testo che segue viene attribuito a quella persona. In basso: **Annulla**, **Nota**, **★ Importante**, **Stop**.
+3. Quando cambia chi parla **tocchi il suo nome**: il cambio scatta appena il dito tocca lo schermo; le parole già riconosciute restano a chi parlava prima, quelle che seguono vanno subito alla nuova persona (la frase in corso viene divisa in quel punto, senza perdere parole). In basso: **Annulla**, **Nota**, **★ Importante**, **Stop**.
 4. **Timeline** → ascolti l'audio, correggi persona, tempi e testo, aggiungi o elimini eventi.
-5. **Esporta** → audio `.m4a`, Markdown per AI (con la trascrizione come dialogo), JSON, CSV, TXT → «Salva su File», AirDrop o Mail.
+5. **Esporta** → **🛟 Backup completo**: un unico `.zip` con audio, timeline, testo, note, un rapporto di verifica e i dati per ripristinare la riunione (anche su un altro iPhone, dalla Home → «Ripristina un backup»). Ci sono anche i file singoli: audio `.m4a`, Markdown per AI (con la trascrizione come dialogo), JSON, CSV, TXT → «Salva su File», AirDrop o Mail.
+6. **Eliminare**: 🗑 sulla riunione nella Home la sposta nel **cestino**, da cui si ripristina. Si cancella per sempre solo dal cestino; se non c'è un backup bisogna scrivere ELIMINA.
 
 Esempio: i tocchi `00:00:00 Marco · 00:01:42 Giulia · 00:03:15 Luca · 00:05:07 Marco` diventano
 
@@ -32,7 +33,7 @@ Esempio: i tocchi `00:00:00 Marco · 00:01:42 Giulia · 00:03:15 Luca · 00:05:0
 - **Fai prima le prove in «Diagnostica»** sul tuo iPhone: ti dice che cosa succede davvero con il tuo modello e la tua versione di iOS, compreso lo schermo bloccato. Protocollo completo: [docs/TEST.md](docs/TEST.md).
 - **Usala in Safari**: la trascrizione in diretta su iPhone funziona solo lì, non nell'app aggiunta alla schermata Home (che ha anche un archivio separato). Per avere un'icona, aggiungila alla Home con «Apri come app web» disattivato (iOS 26).
 - La trascrizione in diretta è **approssimativa** (è la dettatura di iOS con il telefono sul tavolo): serve a vedere subito che l'app sente le voci e a dare all'AI un testo già attribuito. Per un testo accurato dai all'AI anche l'audio.
-- **Esporta dopo ogni riunione**: il telefono non è un archivio sicuro (Safari può cancellare i dati dei siti non usati da tempo).
+- **Fai il backup completo dopo ogni riunione** e salvalo in File/iCloud Drive o sul computer: il telefono non è un archivio sicuro (Safari può cancellare i dati dei siti non usati da tempo). La Home segna «⚠ nessun backup» le riunioni che esistono solo dentro Safari.
 
 ## Documentazione
 
@@ -63,6 +64,8 @@ chiparla/
 │   ├── exporters.js        JSON, CSV, TXT, Markdown per AI (logica pura, testata)
 │   ├── mp4.js              lettura dei file MP4 di Safari: durata reale e salti
 │   ├── audio.js            ricostruzione e verifica dei file audio
+│   ├── backup.js           backup completo .zip, verifica e ripristino
+│   ├── zip.js              ZIP senza compressione (logica pura, testata)
 │   ├── wakelock.js · level.js · haptics.js · settings.js · env.js · ui.js · util.js
 │   └── screens/            home, setup, record, edit (timeline), export, diag
 ├── tests/                  test automatici (node --test)

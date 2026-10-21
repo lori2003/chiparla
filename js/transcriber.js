@@ -22,6 +22,8 @@ export function transcriptionSupport() {
   return { ok: true };
 }
 
+const splitWords = (text) => String(text ?? '').split(/\s+/).filter(Boolean);
+
 export const STATE_TEXT = {
   off: 'spenta',
   starting: 'avvio…',
@@ -69,6 +71,7 @@ export class LiveTranscriber {
       this.sessionAt = Date.now();
       this.lastEventAt = Date.now();
       this.heard = false;
+      this.skipWords = 0;
       this.setState('listening');
     };
     this.rec.onspeechstart = () => {
@@ -121,27 +124,50 @@ export class LiveTranscriber {
     this.heard = true;
     // risultati da una sessione partita mentre lo stato diceva altro (es. dopo un riavvio dal watchdog)
     if (this.wanted && !this.active) this.setState('listening');
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    // Il testo di una sessione arriva cumulativo ("buon", "buongiorno a", "buongiorno a tutti"):
+    // si lavora sulle parole, saltando quelle già salvate (frase finita o cambio di chi parla)
+    const texts = [];
+    let final = e.results.length > 0;
+    for (let i = 0; i < e.results.length; i++) {
       const r = e.results[i];
       const text = String(r[0]?.transcript ?? '').trim();
-      if (!text) continue;
-      // stima dell'inizio frase: il primo risultato arriva circa un secondo dopo l'inizio del parlato
-      this.speechAt ??= Date.now() - 900;
-      if (r.isFinal) this.commit(text);
-      else interim = interim ? `${interim} ${text}` : text;
+      if (text) texts.push(text);
+      if (!r.isFinal) final = false;
     }
-    this.pending = interim;
-    this.onInterim?.(interim);
+    const words = splitWords(texts.join(' '));
+    const fresh = words.slice(this.skipWords ?? 0).join(' ');
+    // stima dell'inizio frase: il primo risultato arriva circa un secondo dopo l'inizio del parlato
+    if (fresh) this.speechAt ??= Date.now() - 900;
+    if (final) {
+      if (fresh) this.commit(fresh);
+      this.skipWords = words.length;
+      return;
+    }
+    this.pending = fresh;
+    this.onInterim?.(fresh);
   }
 
-  commit(text) {
-    const startMs = this.speechAt ?? this.sessionAt ?? Date.now();
+  commit(text, endMs = Date.now()) {
+    // mai prima dell'ultimo cambio di speaker: quel testo è di chi è stato toccato
+    const startMs = Math.min(Math.max(this.speechAt ?? this.sessionAt ?? endMs, this.minStartMs ?? 0), endMs);
     this.speechAt = null;
     this.pending = '';
     this.finals += 1;
-    this.onFinal?.({ text, startMs, endMs: Date.now() });
+    this.onFinal?.({ text, startMs, endMs });
     this.onInterim?.('');
+  }
+
+  // Cambio di chi parla (tocco su un nome): le parole già riconosciute restano a chi parlava prima,
+  // quelle che arrivano da qui in poi vanno al nuovo. Il riconoscimento non si interrompe,
+  // quindi non si perde nessuna parola.
+  split(atMs = Date.now()) {
+    if (this.pending) {
+      const n = splitWords(this.pending).length;
+      this.commit(this.pending, atMs);
+      this.skipWords = (this.skipWords ?? 0) + n;
+    }
+    this.speechAt = null;
+    this.minStartMs = atMs;
   }
 
   // Salva come frase definitiva il testo provvisorio (su iOS "isFinal" a volte non arriva)

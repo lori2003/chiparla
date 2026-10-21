@@ -355,9 +355,10 @@ class RecordingSession extends EventTarget {
     this.transcriber?.ensure();
   }
 
-  speaker(speakerId, atMs) {
-    this.touch();
+  speaker(speakerId, atMs = Date.now()) {
     if (this.currentSpeakerId === speakerId) return null;
+    // prima si chiude la frase in corso (a chi parlava), poi si segna il nuovo speaker
+    this.transcriber?.split(atMs);
     return this.addEvent('speaker', { speakerId }, atMs);
   }
 
@@ -381,6 +382,13 @@ class RecordingSession extends EventTarget {
     this.emit();
     await db.deleteEvent(last.id);
     return last;
+  }
+
+  async removeEvent(ev) {
+    if (!this.events.includes(ev)) return;
+    this.events = this.events.filter((e) => e !== ev);
+    this.emit();
+    await db.deleteEvent(ev.id);
   }
 
   async addParticipant(name) {

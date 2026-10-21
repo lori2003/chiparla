@@ -3,6 +3,7 @@
 import { h, toast, openModal, confirmDialog, promptDialog } from '../ui.js';
 import * as db from '../db.js';
 import { getPartBlob, verifyMeetingAudio } from '../audio.js';
+import { isBackedUp } from '../backup.js';
 import {
   buildSegments, sortEvents, talkTime, driftCheck, applyShifts, meetingEnd, partGaps, transcriptItems,
 } from '../timeline.js';
@@ -46,6 +47,7 @@ export async function renderEdit(root, id) {
         h('a', { class: 'btn ghost small', href: `#/export/${id}` }, 'Esporta ›')),
       h('p', { class: 'muted small' },
         `${fmtDateTime(meeting.startedAt || meeting.createdAt)} · durata ${fmtTime(end)} · ${turns} interventi`),
+      safetyCard(),
       audioStatus());
     const info = speakerInfo(sorted, end);
     speechSpeaker = new Map(transcriptItems(events, segs).map((it) => [it.id, it.speakerId]));
@@ -67,6 +69,25 @@ export async function renderEdit(root, id) {
       h('ul', { class: 'events' }, sorted.filter(visible).map((e) => eventRow(e, info))),
       participantsCard(segs),
       h('div', { class: 'sticky-bottom' }, h('a', { class: 'btn primary xl', href: `#/export/${id}` }, 'Esporta i file ›')));
+  }
+
+  // ---------- protezione dei dati ----------
+
+  function safetyCard() {
+    if (meeting.deletedAt) {
+      return h('div', { class: 'card card-warn small' },
+        h('strong', {}, '🗑 Questa riunione è nel cestino. '),
+        h('button', {
+          type: 'button',
+          class: 'btn small primary',
+          onclick: async () => { delete meeting.deletedAt; await saveMeeting(); render(); toast('Riunione ripristinata'); },
+        }, 'Ripristina'));
+    }
+    if (isBackedUp(meeting)) return null;
+    return h('div', { class: 'card card-warn small' },
+      h('strong', {}, '🛟 Salva subito il backup. '),
+      'Finché non è in File, iCloud o sul computer, questa riunione esiste solo dentro Safari. ',
+      h('a', { class: 'btn small primary', href: `#/export/${id}` }, 'Fai il backup'));
   }
 
   // ---------- stato dell'audio ----------

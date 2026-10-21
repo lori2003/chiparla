@@ -1,16 +1,17 @@
 // Schermata 4: esportazione di audio, Markdown per AI, JSON, CSV, TXT.
 // Su iPhone la strada più affidabile è «Condividi» → «Salva su File» / AirDrop / Mail.
 
-import { h, toast, confirmDialog } from '../ui.js';
+import { h, toast, confirmDialog, promptDialog } from '../ui.js';
 import * as db from '../db.js';
 import { getPartBlob, verifyMeetingAudio } from '../audio.js';
+import { buildBackup, isBackedUp } from '../backup.js';
 import {
   buildModel, toJSON, toCSV, toTXT, toMarkdown, fileBase, audioFileName,
 } from '../exporters.js';
 import { appVersion } from '../env.js';
 import { fmtTime, fmtBytes, fmtDateTime, baseMime } from '../util.js';
 
-const ICONS = { audio: '🎧', md: '🤖', json: '{ }', csv: '▦', txt: '≡' };
+const ICONS = { audio: '🎧', md: '🤖', json: '{ }', csv: '▦', txt: '≡', backup: '🛟' };
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 export async function renderExport(root, id) {
@@ -22,7 +23,8 @@ export async function renderExport(root, id) {
 
   if (meeting.parts.some((p) => !p.deleted && !p.audioCheckedAt)) await verifyMeetingAudio(meeting).catch(() => {});
   const events = await db.getEvents(id);
-  const model = buildModel(meeting, events, { version: await appVersion() });
+  const version = await appVersion();
+  const model = buildModel(meeting, events, { version });
   const files = await prepareFiles(meeting, model);
   const md = files.find((f) => f.kind === 'md');
 
@@ -36,11 +38,13 @@ export async function renderExport(root, id) {
         `${fmtDateTime(meeting.startedAt || meeting.createdAt)} · ${fmtTime(model.endSec)} · ${count(meeting.participants.length, 'persona', 'persone')} · `
         + `${count(model.segments.filter((s) => s.speaker && s.audio_part !== null).length, 'intervento', 'interventi')} · `
         + `${count(model.notes.length, 'nota', 'note')} · ${count(model.highlights.length, 'momento importante', 'momenti importanti')}`)),
+    backupCard(meeting, events, version),
     model.warnings.length
       ? h('details', { class: 'card card-warn small' }, h('summary', {}, `⚠ ${model.warnings.length} avvisi sulla registrazione (inclusi nei file)`),
         h('ul', {}, model.warnings.map((w) => h('li', {}, w))))
       : null,
-    h('button', { type: 'button', class: 'btn primary xl', onclick: () => share(files) }, '⬆ Condividi tutti i file'),
+    h('h2', { class: 'section-title' }, 'File singoli'),
+    h('button', { type: 'button', class: 'btn secondary xl', onclick: () => share(files) }, '⬆ Condividi tutti i file'),
     h('p', { class: 'muted small center' }, 'Nel foglio di condivisione scegli «Salva su File» per tenerli sull\'iPhone, oppure AirDrop o Mail per spostarli sul computer.'),
     h('ul', { class: 'files' }, files.map((f) => h('li', { class: 'file' },
       h('span', { class: 'file-ico', 'aria-hidden': 'true' }, ICONS[f.kind]),
@@ -54,13 +58,76 @@ export async function renderExport(root, id) {
     md ? h('details', { class: 'card' }, h('summary', {}, 'Anteprima del Markdown per AI'), h('pre', { class: 'preview' }, md.text)) : null,
     h('details', { class: 'card danger-zone' },
       h('summary', {}, 'Libera spazio / elimina'),
-      h('p', { class: 'small' }, 'Esporta e controlla i file prima di eliminare: sul telefono non esiste un cestino per questi dati.'),
+      h('p', { class: 'small' }, '«Sposta nel cestino» non cancella nulla: la riunione si ripristina dal cestino della Home. L\'audio invece, se lo elimini, è perso (salvo nel backup).'),
       h('div', { class: 'row' },
         meeting.parts.some((p) => !p.deleted)
           ? h('button', { type: 'button', class: 'btn danger', onclick: () => deleteAudio(meeting) }, 'Elimina solo l\'audio')
           : null,
-        h('button', { type: 'button', class: 'btn danger', onclick: () => deleteMeeting(meeting) }, 'Elimina la riunione')))));
+        h('button', { type: 'button', class: 'btn danger', onclick: () => deleteMeeting(meeting) }, 'Sposta nel cestino')))));
   return undefined;
+}
+
+// Backup completo: un solo .zip con audio, dati per il ripristino, Markdown/JSON/CSV/TXT e rapporto.
+// Si prepara subito (serve tempo per leggere l'audio), così il tocco su «Salva» può aprire
+// la condivisione immediatamente come richiede iOS.
+function backupCard(meeting, events, version) {
+  const bar = h('span', {});
+  const progress = h('div', { class: 'backup-progress' }, bar);
+  const status = h('p', { class: 'small' }, 'Preparo il backup…');
+  const last = h('p', { class: 'small muted' });
+  let file = null;
+  const showLast = () => {
+    last.textContent = isBackedUp(meeting)
+      ? `Ultimo backup salvato: ${fmtDateTime(meeting.backupAt)}${meeting.backupHow === 'download' ? ' (scaricato: controlla che sia in File → Download)' : ''}.`
+      : '⚠ Di questa riunione non hai ancora salvato un backup.';
+    last.className = `small ${isBackedUp(meeting) ? 'muted' : 'backup-bad'}`;
+  };
+  const markSaved = async (how) => {
+    meeting.backupAt = Date.now();
+    meeting.backupHow = how;
+    await db.putMeeting(meeting);
+    showLast();
+  };
+  const shareBtn = h('button', {
+    type: 'button',
+    class: 'btn primary xl',
+    disabled: true,
+    onclick: () => { if (file) share([file]).then((ok) => { if (ok) markSaved('share'); }); },
+  }, '🛟 Salva il backup completo');
+  const dlBtn = h('button', {
+    type: 'button',
+    class: 'btn small ghost',
+    disabled: true,
+    onclick: () => { if (file) { download(file); markSaved('download'); } },
+  }, 'Scarica il backup');
+  showLast();
+  buildBackup(meeting, events, {
+    version,
+    onProgress: (what, f) => {
+      status.textContent = `${what} ${Math.round((f || 0) * 100)}%`;
+      bar.style.width = `${Math.round((f || 0) * 100)}%`;
+    },
+  }).then((b) => {
+    file = { kind: 'backup', label: 'Backup completo', name: b.name, type: 'application/zip', blob: b.blob };
+    progress.hidden = true;
+    status.className = 'small backup-ok';
+    status.textContent = `✓ Backup pronto e riletto: ${b.check.audioFiles} file audio (${fmtBytes(b.check.audioBytes)}), `
+      + `${b.check.events} eventi, testi e rapporto di verifica. Totale ${fmtBytes(b.blob.size)}.`;
+    shareBtn.disabled = false;
+    dlBtn.disabled = false;
+  }).catch((e) => {
+    progress.hidden = true;
+    status.className = 'small backup-bad';
+    status.textContent = `Backup non riuscito: ${e?.message || e}. Usa i file singoli qui sotto.`;
+  });
+  return h('section', { class: 'card backup-card' },
+    h('strong', {}, '🛟 Backup completo (consigliato dopo ogni riunione)'),
+    h('p', { class: 'small' }, 'Un unico file .zip con tutto: audio, timeline, testo, note e i dati per ripristinare la riunione in ChiParla anche su un altro iPhone. Nel foglio di condivisione scegli «Salva su File» (meglio iCloud Drive) oppure AirDrop/Mail verso il computer.'),
+    progress,
+    status,
+    shareBtn,
+    h('div', { class: 'row' }, dlBtn),
+    last);
 }
 
 async function prepareFiles(meeting, model) {
@@ -86,7 +153,8 @@ async function prepareFiles(meeting, model) {
 // Alcuni browser accettano solo certi tipi: in quel caso i file di testo passano come text/plain
 function shareableFiles(list) {
   if (!navigator.canShare) return null;
-  const make = (plain) => list.map((f) => new File([f.blob], f.name, { type: plain && f.kind !== 'audio' ? 'text/plain' : f.type }));
+  const plainType = (f) => (f.kind === 'audio' ? f.type : f.kind === 'backup' ? 'application/octet-stream' : 'text/plain');
+  const make = (plain) => list.map((f) => new File([f.blob], f.name, { type: plain ? plainType(f) : f.type }));
   for (const plain of [false, true]) {
     const files = make(plain);
     try { if (navigator.canShare({ files })) return files; } catch { /* prova la variante successiva */ }
@@ -94,17 +162,19 @@ function shareableFiles(list) {
   return null;
 }
 
-// Deve restare sincrona fino a navigator.share: iOS richiede che parta dal tocco
+// Deve restare sincrona fino a navigator.share: iOS richiede che parta dal tocco.
+// Risolve con true se la condivisione è stata completata (es. «Salva su File»).
 function share(list) {
   const files = shareableFiles(list);
   if (!files) {
     toast('Condivisione di file non disponibile: avvio il download.');
     list.forEach((f, i) => setTimeout(() => download(f), i * 400));
-    return;
+    return Promise.resolve(true);
   }
   // Solo "files": su iOS aggiungere title/text può far condividere il testo invece dei file
-  navigator.share({ files }).catch((e) => {
+  return navigator.share({ files }).then(() => true, (e) => {
     if (e?.name !== 'AbortError') toast(`Condivisione non riuscita: ${e?.message || e}`);
+    return false;
   });
 }
 
@@ -127,8 +197,18 @@ async function copyText(text) {
 }
 
 async function deleteAudio(meeting) {
-  const ok = await confirmDialog('Eliminare l\'audio?', 'Restano timeline, note ed esportazioni di testo. L\'audio non si potrà recuperare.', { ok: 'Elimina audio', danger: true });
-  if (!ok) return;
+  if (isBackedUp(meeting)) {
+    const ok = await confirmDialog('Eliminare l\'audio dal telefono?', 'Restano timeline, note ed esportazioni di testo. L\'audio resta nel backup che hai salvato.', { ok: 'Elimina audio', danger: true });
+    if (!ok) return;
+  } else {
+    const v = await promptDialog('Eliminare l\'audio dal telefono?', {
+      placeholder: 'ELIMINA',
+      ok: 'Elimina audio',
+      hint: '⚠ Non hai salvato un backup di questa riunione: l\'audio non si potrà più recuperare. Per confermare scrivi ELIMINA.',
+    });
+    if (v == null) return;
+    if (v.trim().toUpperCase() !== 'ELIMINA') { toast('Audio non eliminato: bisognava scrivere ELIMINA'); return; }
+  }
   await db.deleteChunks(meeting.id);
   meeting.parts.forEach((p) => { p.deleted = true; });
   await db.putMeeting(meeting);
@@ -136,10 +216,12 @@ async function deleteAudio(meeting) {
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 
+// Non cancella nulla: la riunione va nel cestino della Home, da dove si può ripristinare
 async function deleteMeeting(meeting) {
-  const ok = await confirmDialog('Eliminare la riunione?', `«${meeting.title}»: audio, timeline e note verranno cancellati da questo telefono.`, { ok: 'Elimina tutto', danger: true });
+  const ok = await confirmDialog(`Spostare «${meeting.title}» nel cestino?`, 'Resta sul telefono e si può ripristinare dal cestino in fondo alla Home.', { ok: 'Sposta nel cestino', danger: true });
   if (!ok) return;
-  await db.deleteMeeting(meeting.id);
-  toast('Riunione eliminata');
+  meeting.deletedAt = Date.now();
+  await db.putMeeting(meeting);
+  toast('Spostata nel cestino');
   location.hash = '#/';
 }

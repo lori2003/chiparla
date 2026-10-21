@@ -58,6 +58,7 @@ GitHub Pages, PWA e installazione: [PUBBLICAZIONE.md](PUBBLICAZIONE.md). Limiti 
 | `db.js` | IndexedDB con riconnessione automatica e ripiego Blob → ArrayBuffer |
 | `timeline.js` | tocchi → interventi, tempo di parola, intervalli in background, verifica allineamento, spostamento tempi |
 | `exporters.js` | JSON, CSV, TXT, Markdown per AI, nomi dei file |
+| `backup.js`, `zip.js` | backup completo in un .zip (audio + dati per il ripristino + esportazioni + rapporto di verifica), riletto e controllato dopo la creazione; ripristino che non sovrascrive mai una riunione esistente |
 | `mp4.js` | legge le strutture MP4 frammentate di Safari: formato recuperabile?, durata reale, salti nei tempi |
 | `audio.js` | ricompone i file dai pezzi, misura la durata, salva i risultati della verifica |
 | `wakelock.js`, `level.js`, `haptics.js` | schermo acceso, livello del microfono, vibrazione (dove possibile) |

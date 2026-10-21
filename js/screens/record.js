@@ -126,16 +126,32 @@ export async function renderRecord(root, id) {
         dataset: { id: p.id },
         'aria-pressed': 'false',
       }, h('span', { class: 'speaker-name' }, p.name));
-      // il tempo si prende quando il dito tocca lo schermo (più preciso del "click")
-      b.addEventListener('pointerdown', () => { b.downAt = Date.now(); });
-      b.addEventListener('click', () => {
-        const at = b.downAt && Date.now() - b.downAt < 1500 ? b.downAt : Date.now();
-        b.downAt = null;
-        haptic();
+      // Il cambio avviene appena il dito tocca lo schermo, senza aspettare che si alzi:
+      // pulsante, "Sta parlando" e testo in diretta passano subito alla nuova persona
+      const select = (at) => {
         b.classList.remove('pulse');
         void b.offsetWidth;
         b.classList.add('pulse');
-        session.speaker(p.id, at);
+        return session.speaker(p.id, at);
+      };
+      b.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        b.downAt = Date.now();
+        b.pending = select(b.downAt);
+      });
+      // il dito è partito da qui per scorrere la griglia (molti partecipanti): non era un cambio
+      b.addEventListener('pointercancel', async () => {
+        if (!b.downAt) return;
+        b.downAt = null;
+        const ev = await b.pending;
+        if (ev) session.removeEvent(ev);
+      });
+      b.addEventListener('click', () => {
+        // il "click" (dito alzato) è il gesto che iOS richiede per vibrazione, trascrizione e schermo acceso
+        haptic();
+        session.touch();
+        if (b.downAt && Date.now() - b.downAt < 3000) { b.downAt = null; return; }
+        select(Date.now()); // tastiera o lettore dello schermo: nessun pointerdown
       });
       return b;
     }));
@@ -191,15 +207,17 @@ export async function renderRecord(root, id) {
         : (t.reason || 'In pausa: tocca un nome per riattivarla.')));
       return;
     }
-    // si mostra la parte finale del testo, quella appena detta
-    const room = Math.max(40, 150 - interim.length);
+    // Ultima frase salvata (con chi l'ha detta) e, su una riga a parte, il testo in corso
+    // attribuito a chi sta parlando adesso: dopo un tocco su un nome si vede subito il cambio
+    const room = interim ? Math.max(40, 110 - interim.length) : 150;
     let finalText = last ? last.text : '';
     if (finalText.length > room) finalText = `…${finalText.slice(-room)}`;
     const who = last ? speakerAtTime((last.t + (last.end ?? last.t)) / 2) : null;
+    const cur = session.meeting.participants.find((x) => x.id === session.currentSpeakerId) ?? null;
+    const whoEl = (p) => (p ? h('span', { class: 'live-who', style: { '--c': p.color } }, `${p.name}: `) : null);
     liveBody.replaceChildren(...[
-      who ? h('span', { class: 'live-who', style: { '--c': who.color } }, `${who.name}: `) : null,
-      finalText ? h('span', { class: 'live-final' }, `${finalText} `) : null,
-      interim ? h('span', { class: 'live-interim' }, interim) : null,
+      finalText ? h('span', { class: `live-line${interim ? ' live-prev' : ''}` }, whoEl(who), h('span', { class: 'live-final' }, finalText)) : null,
+      interim ? h('span', { class: 'live-line' }, whoEl(cur), h('span', { class: 'live-interim' }, interim)) : null,
     ].filter(Boolean));
   }
 

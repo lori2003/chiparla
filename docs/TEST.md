@@ -77,6 +77,7 @@ Durante una prova di registrazione: fatti chiamare da qualcuno (rifiuta o rispon
 ## 8. Esportazione e AI (5 minuti)
 
 1. **Esporta → Condividi tutti i file → Salva su File**: apri il `.m4a` dall'app File e verifica che si ascolti.
+1. **Prova di ripristino** (una volta): salva il backup completo, sposta la riunione nel cestino ed eliminala per sempre, poi Home → «Ripristina un backup» → scegli il `.zip`: deve tornare con audio, timeline e testo. Aprendo lo `.zip` dall'app File trovi anche `LEGGIMI-VERIFICA.txt` con durate e controlli.
 2. Invia i file al computer (AirDrop, o salvali in iCloud Drive).
 3. Carica **audio + `_per-AI.md`** nel servizio AI che userai (ChatGPT, NotebookLM, …) e chiedi: *«Trascrivi l'audio attribuendo le frasi secondo la timeline del file Markdown, poi sintesi, decisioni e azioni.»* Controlla che le attribuzioni tornino.
 4. Apri il `.csv` nel foglio di calcolo (in Excel: *Dati → Da testo/CSV*).
@@ -120,4 +121,4 @@ Attiva la modalità aereo, apri ChiParla, fai una registrazione di 30 s ed espor
 - [ ] ChiParla aperta **in Safari** (con internet, se vuoi la trascrizione)
 - [ ] Partecipanti inseriti, **Avvia**, controlla «💾 salvato … s fa», «☀ schermo acceso», la barra verde che si muove e il riquadro «Testo in diretta» che mostra le frasi
 - [ ] Durante: app sempre in primo piano; note con la tastiera, non dettate
-- [ ] Dopo: **Stop**, controlla la timeline, **Esporta → Salva su File**
+- [ ] Dopo: **Stop**, controlla la timeline, **Esporta → 🛟 Salva il backup completo → Salva su File** (iCloud Drive) e verifica che nella Home compaia «✓ backup»
