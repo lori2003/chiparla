@@ -214,18 +214,17 @@ export async function renderRecord(root, id) {
     }));
   }
 
-  // Colonne: sul telefono come sempre (1-3); su schermi larghi (PC, tablet in orizzontale)
-  // nomi affiancati e tante colonne quante servono perché stiano tutti senza scorrere
+  // Colonne: le meno possibili (nomi più grandi e leggibili) purché tutti i pulsanti stiano nello
+  // schermo senza scorrere. Telefono: 1 colonna fino a 3 persone, poi 2, 3 solo se non c'è posto.
+  // Schermi larghi (PC, tablet in orizzontale): fino a 3 persone affiancate, poi fino a 6 colonne.
   function layoutGrid() {
     const n = gridCount;
-    let cols = n <= 3 ? 1 : n <= 8 ? 2 : 3;
     const w = grid.clientWidth;
-    if (w >= 700) {
-      if (n <= 3) cols = Math.max(1, n);
-      const maxCols = Math.max(cols, Math.min(6, Math.floor(w / 200)));
-      const rowsFit = Math.max(1, Math.floor((grid.clientHeight + 10) / 74)); // righe da almeno 64 px + spazio
-      while (cols < maxCols && Math.ceil(n / cols) > rowsFit) cols++;
-    }
+    const wide = w >= 700;
+    let cols = n <= 3 ? (wide ? Math.max(1, n) : 1) : 2;
+    const maxCols = wide ? Math.max(cols, Math.min(6, Math.floor(w / 200))) : 3;
+    const rowsFit = Math.max(1, Math.floor((grid.clientHeight + 10) / 62)); // righe da almeno 52 px + spazio
+    while (cols < maxCols && Math.ceil(n / cols) > rowsFit) cols++;
     const value = `repeat(${cols}, minmax(0, 1fr))`;
     if (grid.style.gridTemplateColumns !== value) grid.style.gridTemplateColumns = value;
     grid.dataset.cols = String(cols);

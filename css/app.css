@@ -252,7 +252,7 @@ textarea { resize: vertical; min-height: 96px; }
 .rec-current.empty { background: #16181c; color: #9aa0a6; }
 .rec-current.empty strong { font-size: 18px; font-weight: 500; }
 .rec-since { font-variant-numeric: tabular-nums; font-weight: 600; flex: none; }
-.speaker-grid { flex: 1; min-height: 0; display: grid; gap: 10px; grid-auto-rows: minmax(64px, 1fr); overflow-y: auto; padding: 2px; }
+.speaker-grid { flex: 1; min-height: 0; display: grid; gap: 10px; grid-auto-rows: minmax(52px, 1fr); overflow-y: auto; padding: 2px; }
 .speaker-btn {
   position: relative; overflow: hidden; min-width: 0;
   border: 3px solid var(--c); border-radius: 18px; background: #111317; color: #fff;
@@ -269,7 +269,7 @@ textarea { resize: vertical; min-height: 96px; }
 .speaker-name {
   /* "Cognome Nome": va a capo su due righe invece di essere troncato */
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-  line-height: 1.12; overflow-wrap: anywhere;
+  line-height: 1.12; overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; /* sillabazione italiana se serve */
 }
 @media (max-width: 699px) {
   .speaker-grid[data-cols="2"] .speaker-btn { font-size: clamp(16px, 5.2vw, 32px); padding-left: 18px; padding-right: 6px; }

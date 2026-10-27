@@ -4,7 +4,7 @@
 // Per pubblicare un aggiornamento: modificare i file, aumentare VERSION, fare commit e push.
 // L'app mostrerà «Nuova versione disponibile» (mai durante una registrazione).
 
-const VERSION = '1.4.2';
+const VERSION = '1.4.3';
 const CACHE = `chiparla-${VERSION}`;
 
 const ASSETS = [
