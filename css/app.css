@@ -409,3 +409,7 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
   .act .key-hint { left: auto; right: 6px; top: 4px; }
 }
 .groups .group-pill { font-weight: 600; }
+.group-edit input { flex: 1; min-width: 0; font: inherit; border: none; background: transparent; color: var(--text); padding: 8px 4px; }
+.group-edit input:focus { outline: 2px solid var(--primary); border-radius: 8px; }
+.group-n { width: 22px; text-align: right; flex: none; }
+.group-names { white-space: normal !important; }

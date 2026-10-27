@@ -11,7 +11,7 @@ Online: **https://lori2003.github.io/chiparla/**
 
 ## Come si usa
 
-1. **Nuova riunione** → titolo e partecipanti (anche più nomi insieme: `Marco, Giulia, Luca`, oppure incolla un elenco su più righe); con **Gruppi → 👥 Presidenza** aggiungi tutti i componenti con un tocco (al primo uso incolli l'elenco dal verbale; «💾 Salva come gruppo» per crearne altri). Lascia attiva la **trascrizione in diretta**.
+1. **Nuova riunione** → titolo e partecipanti (anche più nomi insieme: `Marco, Giulia, Luca`, oppure incolla un elenco su più righe); con **Gruppi → 👥 Presidenza** aggiungi tutti i componenti con un tocco (al primo uso incolli l'elenco dal verbale; con «✎ Modifica gruppi» rinomini un gruppo, correggi, togli, aggiungi o riordini i nominativi; «💾 Salva come gruppo» ne crea uno dai partecipanti attuali). Lascia attiva la **trascrizione in diretta**.
 2. **Avvia registrazione** → timer grande, REC, barra del microfono che si muove con le voci, **testo in diretta**, pulsanti enormi con i nomi.
 3. Quando cambia chi parla **tocchi il suo nome**: il cambio scatta appena il dito tocca lo schermo; le parole già riconosciute restano a chi parlava prima, quelle che seguono vanno subito alla nuova persona (la frase in corso viene divisa in quel punto, senza perdere parole). In basso: **Annulla**, **Nota** (generale oppure *su chi sta parlando*: se non hai selezionato nessuno te lo dice), **★ Importante**, **Stop**.
    Da PC/tastiera: **1-9 e 0** = persone (nell'ordine dei pulsanti), **N** nota, **I** momento importante, **Z** annulla.

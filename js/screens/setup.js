@@ -81,7 +81,7 @@ export function renderSetup(root) {
       ...groups.map((g) => h('button', { type: 'button', class: 'pill group-pill', onclick: () => useGroup(g) },
         `👥 ${g.name}${g.names.length ? ` (${g.names.length})` : ''}`)),
       participants.length ? h('button', { type: 'button', class: 'pill', onclick: saveAsGroup }, '💾 Salva come gruppo') : null,
-      groups.length ? h('button', { type: 'button', class: 'pill', onclick: manageGroups }, '✎ Gestisci') : null,
+      h('button', { type: 'button', class: 'pill', onclick: manageGroups }, groups.length ? '✎ Modifica gruppi' : '＋ Nuovo gruppo'),
     ].filter(Boolean)); // replaceChildren scriverebbe "null" come testo
   }
 
@@ -127,22 +127,129 @@ export function renderSetup(root) {
   function manageGroups() {
     openModal({
       title: 'Gruppi',
-      body: h('ul', { class: 'list' }, getGroups().map((g) => h('li', { class: 'item' },
-        h('div', { class: 'item-main' },
-          h('strong', {}, g.name),
-          h('span', { class: 'muted small' }, g.names.length ? g.names.join(', ') : 'nessun nome')),
-        h('button', { type: 'button', class: 'btn small secondary', onclick: () => askNames(g).then(() => drawGroups()) }, 'Modifica'),
-        h('button', {
-          type: 'button',
-          class: 'btn small ghost icon-only',
-          'aria-label': `Elimina il gruppo ${g.name}`,
-          onclick: async () => {
-            if (!await confirmDialog(`Eliminare il gruppo «${g.name}»?`, 'Si cancella solo l\'elenco dei nomi: le riunioni non vengono toccate.', { ok: 'Elimina', danger: true })) return;
+      body: h('div', { class: 'edit-form' },
+        h('ul', { class: 'list' }, getGroups().map((g) => h('li', { class: 'item' },
+          h('div', { class: 'item-main' },
+            h('strong', {}, `${g.name} (${g.names.length})`),
+            h('span', { class: 'muted small group-names' }, g.names.length ? g.names.join(', ') : 'nessun nome')),
+          h('button', { type: 'button', class: 'btn small secondary', onclick: () => editGroup(g) }, 'Modifica')))),
+        h('button', { type: 'button', class: 'btn secondary', onclick: () => editGroup(null) }, '＋ Nuovo gruppo')),
+      actions: [{ label: 'Chiudi', class: 'secondary' }],
+    });
+  }
+
+  // Editor di un gruppo: nome del gruppo, nominativi uno per uno (correggi, togli, sposta, aggiungi)
+  // e incolla di un elenco. g = null → nuovo gruppo.
+  function editGroup(g) {
+    const isNew = !g;
+    const names = isNew ? [] : [...g.names];
+    const nameInput = h('input', { type: 'text', value: g?.name ?? '', placeholder: 'Nome del gruppo, es. Presidenza' });
+    const rows = h('ul', { class: 'chips group-edit' });
+    const addInput = h('input', { type: 'text', placeholder: 'Aggiungi un nominativo', autocapitalize: 'words', enterkeyhint: 'done' });
+    const pasteArea = h('textarea', { rows: 4, placeholder: '1. Mario Rossi – Presidente\n2. Anna Bianchi (Vicepresidente)\n…' });
+
+    const drawRows = () => {
+      rows.replaceChildren(...names.map((n, i) => {
+        const input = h('input', { type: 'text', value: n, 'aria-label': `Nominativo ${i + 1}` });
+        input.addEventListener('input', () => { names[i] = input.value; });
+        return h('li', { class: 'chip', style: { '--c': '#888' } },
+          h('span', { class: 'group-n muted small' }, String(i + 1)),
+          input,
+          i > 0 ? h('button', {
+            type: 'button', class: 'chip-btn', 'aria-label': `Sposta ${n} su`,
+            onclick: () => { names.splice(i - 1, 0, names.splice(i, 1)[0]); drawRows(); },
+          }, '↑') : null,
+          h('button', {
+            type: 'button', class: 'chip-btn', 'aria-label': `Togli ${n}`,
+            onclick: () => { names.splice(i, 1); drawRows(); },
+          }, '✕'));
+      }));
+      if (!names.length) rows.append(h('li', { class: 'muted small' }, 'Nessun nominativo: aggiungili qui sotto o incolla un elenco.'));
+    };
+    const addNames = (list) => {
+      const have = new Set(names.map((n) => n.trim().toLowerCase()));
+      let added = 0;
+      for (const n of list) {
+        if (have.has(n.toLowerCase())) continue;
+        have.add(n.toLowerCase());
+        names.push(n);
+        added += 1;
+      }
+      drawRows();
+      return added;
+    };
+    const addOne = () => { addNames(parseNameList(addInput.value)); addInput.value = ''; addInput.focus(); };
+    addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addOne(); } });
+    drawRows();
+
+    openModal({
+      title: isNew ? 'Nuovo gruppo' : `Modifica «${g.name}»`,
+      body: h('div', { class: 'edit-form' },
+        h('label', { class: 'field' }, h('span', {}, 'Nome del gruppo'), nameInput),
+        h('div', { class: 'field' }, h('span', {}, 'Nominativi (l\'ordine è quello dei pulsanti e dei tasti 1-9)'), rows),
+        h('div', { class: 'add-row' }, addInput, h('button', { type: 'button', class: 'btn secondary', onclick: addOne }, 'Aggiungi')),
+        h('details', { class: 'card small' },
+          h('summary', {}, '📋 Incolla un elenco (es. dal verbale)'),
+          h('p', { class: 'muted small' }, 'Una persona per riga o separate da virgola. Numerazione, punti elenco e ruoli («– Presidente», «(Segretario)») vengono tolti da soli.'),
+          pasteArea,
+          h('div', { class: 'row' },
+            h('button', {
+              type: 'button',
+              class: 'btn small secondary',
+              onclick: () => {
+                const n = addNames(parseNameList(pasteArea.value));
+                pasteArea.value = '';
+                toast(n ? `${n} nominativi aggiunti` : 'Nessun nominativo nuovo');
+              },
+            }, 'Aggiungi in fondo'),
+            h('button', {
+              type: 'button',
+              class: 'btn small ghost',
+              onclick: () => {
+                const list = parseNameList(pasteArea.value);
+                if (!list.length) { toast('Incolla prima l\'elenco'); return; }
+                names.splice(0, names.length);
+                addNames(list);
+                pasteArea.value = '';
+                toast(`Elenco sostituito: ${names.length} nominativi`);
+              },
+            }, 'Sostituisci tutto')))),
+      actions: [
+        isNew ? null : {
+          label: 'Elimina gruppo',
+          class: 'danger',
+          onClick: async () => {
+            if (!await confirmDialog(`Eliminare il gruppo «${g.name}»?`, 'Si cancella solo l\'elenco dei nominativi: le riunioni già registrate non vengono toccate.', { ok: 'Elimina', danger: true })) return false;
             deleteGroup(g.name);
             drawGroups();
+            toast(`Gruppo «${g.name}» eliminato`);
+            return true;
           },
-        }, '🗑')))),
-      actions: [{ label: 'Chiudi', class: 'secondary' }],
+        },
+        { label: 'Annulla', value: null, class: 'secondary' },
+        {
+          label: 'Salva',
+          class: 'primary',
+          onClick: () => {
+            if (addInput.value.trim()) addOne();
+            const name = nameInput.value.trim().replace(/\s+/g, ' ');
+            if (!name) { toast('Scrivi il nome del gruppo'); return false; }
+            const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+            if (getGroups().some((x) => same(x.name, name) && !(g && same(g.name, name)))) {
+              toast(`Esiste già un gruppo «${name}»`);
+              return false;
+            }
+            const clean = parseNameList(names.join('\n'));
+            if (!clean.length) { toast('Aggiungi almeno un nominativo'); return false; }
+            if (g && !same(g.name, name)) deleteGroup(g.name); // rinominato
+            saveGroup(name, clean);
+            drawGroups();
+            toast(`Gruppo «${name}» salvato (${clean.length} nominativi)`);
+            return true;
+          },
+        },
+      ].filter(Boolean),
+      onOpen: () => (isNew ? nameInput : addInput).focus(),
     });
   }
 
