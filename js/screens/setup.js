@@ -1,19 +1,25 @@
 // Schermata 1: titolo, partecipanti, impostazioni → Avvia registrazione.
 
-import { h, toast, openModal, promptDialog } from '../ui.js';
+import { h, toast, openModal, promptDialog, confirmDialog } from '../ui.js';
 import { session } from '../session.js';
-import { getSettings, saveSettings, getRecentNames, rememberNames, LANGUAGES } from '../settings.js';
-import { uid, nextColor, splitNames, fmtDateTime, PALETTE } from '../util.js';
+import {
+  getSettings, saveSettings, getRecentNames, rememberNames, LANGUAGES, getGroups, saveGroup, deleteGroup,
+} from '../settings.js';
+import {
+  uid, nextColor, splitNames, parseNameList, fmtDateTime, PALETTE,
+} from '../util.js';
 import { transcriptionSupport } from '../transcriber.js';
 
 export function renderSetup(root) {
   const participants = [];
-  const titleInput = h('input', { type: 'text', value: `Riunione ${fmtDateTime(Date.now())}`, enterkeyhint: 'next' });
+  const defaultTitle = `Riunione ${fmtDateTime(Date.now())}`;
+  const titleInput = h('input', { type: 'text', value: defaultTitle, enterkeyhint: 'next' });
   const nameInput = h('input', {
     type: 'text', placeholder: 'Nome (anche più nomi separati da virgola)', autocapitalize: 'words', enterkeyhint: 'done',
   });
   const list = h('ul', { class: 'chips' });
   const recentBox = h('div', { class: 'recent' });
+  const groupsBox = h('div', { class: 'recent groups' });
   const startBtn = h('button', { type: 'button', class: 'btn primary xl' }, '🎙 Avvia registrazione');
 
   const has = (name) => participants.some((p) => p.name.toLowerCase() === name.toLowerCase());
@@ -63,7 +69,90 @@ export function renderSetup(root) {
     recentBox.replaceChildren(...(recent.length
       ? [h('span', { class: 'muted small' }, 'Recenti: '), ...recent.map((n) => h('button', { type: 'button', class: 'pill', onclick: () => add([n]) }, `＋ ${n}`))]
       : []));
+    drawGroups();
   }
+
+  // ---------- gruppi (es. Presidenza): tutti i nomi con un tocco ----------
+
+  function drawGroups() {
+    const groups = getGroups();
+    groupsBox.replaceChildren(...[
+      h('span', { class: 'muted small' }, 'Gruppi: '),
+      ...groups.map((g) => h('button', { type: 'button', class: 'pill group-pill', onclick: () => useGroup(g) },
+        `👥 ${g.name}${g.names.length ? ` (${g.names.length})` : ''}`)),
+      participants.length ? h('button', { type: 'button', class: 'pill', onclick: saveAsGroup }, '💾 Salva come gruppo') : null,
+      groups.length ? h('button', { type: 'button', class: 'pill', onclick: manageGroups }, '✎ Gestisci') : null,
+    ].filter(Boolean)); // replaceChildren scriverebbe "null" come testo
+  }
+
+  // Elenco incollato dal verbale: una persona per riga; numeri, punti elenco e ruoli si tolgono da soli
+  function askNames(group) {
+    return promptDialog(group.names.length ? `Modifica «${group.name}»` : `Nominativi: ${group.name}`, {
+      value: group.names.join('\n'),
+      multiline: true,
+      placeholder: 'Mario Rossi\nAnna Bianchi\n…',
+      hint: 'Incolla l\'elenco dei nominativi (per esempio dal verbale): una persona per riga o separate da virgola. '
+        + 'Numerazione, punti elenco e ruoli come «– Presidente» o «(Segretario)» vengono tolti da soli. Resta salvato su questo dispositivo.',
+    }).then((text) => {
+      if (text == null) return null;
+      const names = parseNameList(text);
+      if (!names.length) { toast('Nessun nome riconosciuto'); return null; }
+      saveGroup(group.name, names);
+      return names;
+    });
+  }
+
+  function useGroup(g) {
+    const apply = (names) => {
+      if (!names) return;
+      const before = participants.length;
+      add(names);
+      if (titleInput.value === defaultTitle) titleInput.value = `${g.name} ${fmtDateTime(Date.now())}`;
+      toast(`${g.name}: ${participants.length - before} persone aggiunte`);
+    };
+    if (g.names.length) apply(g.names); else askNames(g).then(apply);
+  }
+
+  function saveAsGroup() {
+    promptDialog('Salva come gruppo', { placeholder: 'Nome del gruppo, es. Presidenza', ok: 'Salva' }).then(async (name) => {
+      if (!name) return;
+      const exists = getGroups().find((g) => g.name.toLowerCase() === name.toLowerCase());
+      if (exists && !await confirmDialog(`Sostituire «${exists.name}»?`, `Il gruppo avrà questi ${participants.length} nomi al posto dei ${exists.names.length} attuali.`, { ok: 'Sostituisci' })) return;
+      saveGroup(exists?.name ?? name, participants.map((p) => p.name));
+      drawGroups();
+      toast(`Gruppo «${exists?.name ?? name}» salvato`);
+    });
+  }
+
+  function manageGroups() {
+    openModal({
+      title: 'Gruppi',
+      body: h('ul', { class: 'list' }, getGroups().map((g) => h('li', { class: 'item' },
+        h('div', { class: 'item-main' },
+          h('strong', {}, g.name),
+          h('span', { class: 'muted small' }, g.names.length ? g.names.join(', ') : 'nessun nome')),
+        h('button', { type: 'button', class: 'btn small secondary', onclick: () => askNames(g).then(() => drawGroups()) }, 'Modifica'),
+        h('button', {
+          type: 'button',
+          class: 'btn small ghost icon-only',
+          'aria-label': `Elimina il gruppo ${g.name}`,
+          onclick: async () => {
+            if (!await confirmDialog(`Eliminare il gruppo «${g.name}»?`, 'Si cancella solo l\'elenco dei nomi: le riunioni non vengono toccate.', { ok: 'Elimina', danger: true })) return;
+            deleteGroup(g.name);
+            drawGroups();
+          },
+        }, '🗑')))),
+      actions: [{ label: 'Chiudi', class: 'secondary' }],
+    });
+  }
+
+  // un elenco su più righe incollato nel campo (che ne terrebbe una sola) aggiunge tutti i nomi
+  nameInput.addEventListener('paste', (e) => {
+    const text = e.clipboardData?.getData('text') ?? '';
+    if (!/[\r\n]/.test(text.trim())) return;
+    e.preventDefault();
+    add(parseNameList(text));
+  });
 
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); addFromInput(); }
@@ -112,6 +201,7 @@ export function renderSetup(root) {
       h('span', {}, 'Partecipanti'),
       h('div', { class: 'add-row' }, nameInput, h('button', { type: 'button', class: 'btn secondary', onclick: addFromInput }, 'Aggiungi')),
       list,
+      groupsBox,
       recentBox),
     transcriptionCard(),
     settingsPanel(),

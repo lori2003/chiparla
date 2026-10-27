@@ -11,9 +11,10 @@ Online: **https://lori2003.github.io/chiparla/**
 
 ## Come si usa
 
-1. **Nuova riunione** → titolo e partecipanti (anche più nomi insieme: `Marco, Giulia, Luca`); lascia attiva la **trascrizione in diretta**.
+1. **Nuova riunione** → titolo e partecipanti (anche più nomi insieme: `Marco, Giulia, Luca`, oppure incolla un elenco su più righe); con **Gruppi → 👥 Presidenza** aggiungi tutti i componenti con un tocco (al primo uso incolli l'elenco dal verbale; «💾 Salva come gruppo» per crearne altri). Lascia attiva la **trascrizione in diretta**.
 2. **Avvia registrazione** → timer grande, REC, barra del microfono che si muove con le voci, **testo in diretta**, pulsanti enormi con i nomi.
 3. Quando cambia chi parla **tocchi il suo nome**: il cambio scatta appena il dito tocca lo schermo; le parole già riconosciute restano a chi parlava prima, quelle che seguono vanno subito alla nuova persona (la frase in corso viene divisa in quel punto, senza perdere parole). In basso: **Annulla**, **Nota** (generale oppure *su chi sta parlando*: se non hai selezionato nessuno te lo dice), **★ Importante**, **Stop**.
+   Da PC/tastiera: **1-9 e 0** = persone (nell'ordine dei pulsanti), **N** nota, **I** momento importante, **Z** annulla.
 4. **Timeline** → ascolti l'audio, correggi persona, tempi e testo, aggiungi o elimini eventi.
 5. **Esporta** → **🛟 Backup completo**: un unico `.zip` con audio, timeline, testo, note, un rapporto di verifica e i dati per ripristinare la riunione (anche su un altro iPhone, dalla Home → «Ripristina un backup»). Ci sono anche i file singoli: audio `.m4a`, Markdown per AI (con la trascrizione come dialogo), JSON, CSV, TXT → «Salva su File», AirDrop o Mail.
 6. **Eliminare**: 🗑 sulla riunione nella Home la sposta nel **cestino**, da cui si ripristina. Si cancella per sempre solo dal cestino; se non c'è un backup bisogna scrivere ELIMINA.

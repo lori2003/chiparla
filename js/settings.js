@@ -59,3 +59,57 @@ export function rememberNames(names) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(merged)); } catch { /* ignora */ }
   return merged;
 }
+
+// ---------- gruppi di partecipanti (es. «Presidenza») ----------
+
+const GROUPS_KEY = 'chiparla.groups.v1';
+
+// Gruppi già pronti nell'app. Se l'utente ne modifica uno, vale la sua versione (salvata sul telefono).
+// Un gruppo senza nomi chiede di incollare l'elenco al primo uso.
+export const DEFAULT_GROUPS = Object.freeze([
+  { name: 'Presidenza', names: [] },
+]);
+
+function readGroups() {
+  try {
+    const list = JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((g) => g && typeof g.name === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGroups(list) {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify(list)); } catch { /* spazio pieno o modalità privata */ }
+}
+
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// [{ name, names[] }]: prima i predefiniti (o la loro versione modificata), poi quelli creati dall'utente
+export function getGroups() {
+  const saved = readGroups();
+  const out = [];
+  for (const d of DEFAULT_GROUPS) {
+    const s = saved.find((g) => sameName(g.name, d.name));
+    if (s?.deleted) continue;
+    out.push({ name: d.name, names: [...(s?.names ?? d.names)], builtIn: true });
+  }
+  for (const s of saved) {
+    if (s.deleted || DEFAULT_GROUPS.some((d) => sameName(d.name, s.name))) continue;
+    out.push({ name: s.name, names: [...(s.names ?? [])] });
+  }
+  return out;
+}
+
+export function saveGroup(name, names) {
+  const list = readGroups().filter((g) => !sameName(g.name, name));
+  list.push({ name: name.trim(), names: names.filter((n) => typeof n === 'string' && n.trim()) });
+  writeGroups(list);
+}
+
+// I predefiniti si nascondono (restano nel codice), gli altri si cancellano
+export function deleteGroup(name) {
+  const list = readGroups().filter((g) => !sameName(g.name, name));
+  if (DEFAULT_GROUPS.some((d) => sameName(d.name, name))) list.push({ name, deleted: true });
+  writeGroups(list);
+}

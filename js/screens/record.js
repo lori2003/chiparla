@@ -8,6 +8,9 @@ import { haptic } from '../haptics.js';
 import { fmtTime, fmtClock, fmtDuration, textColorFor } from '../util.js';
 import { STATE_TEXT } from '../transcriber.js';
 
+// tasti delle persone, nell'ordine dei pulsanti
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+
 const ACTION_LABEL = {
   resume: 'Riprendi',
   'restart-mic': 'Riavvia microfono',
@@ -57,7 +60,7 @@ export async function renderRecord(root, id) {
       const ev = await session.undo();
       toast(ev ? `Annullato: ${describe(ev)}` : 'Niente da annullare');
     },
-  }, h('span', { class: 'act-ico' }, '↶'), 'Annulla');
+  }, h('span', { class: 'act-ico' }, '↶'), 'Annulla', h('span', { class: 'key-hint', 'aria-hidden': 'true' }, 'Z'));
 
   const noteBtn = h('button', {
     type: 'button',
@@ -66,7 +69,7 @@ export async function renderRecord(root, id) {
       haptic();
       noteDialog(Date.now()); // il momento della nota è quello del tocco, non del salvataggio
     },
-  }, h('span', { class: 'act-ico' }, '✎'), 'Nota');
+  }, h('span', { class: 'act-ico' }, '✎'), 'Nota', h('span', { class: 'key-hint', 'aria-hidden': 'true' }, 'N'));
 
   // Nota generale o sulla persona che sta parlando (quella selezionata al momento del tocco).
   // Va aperta dentro il tocco perché iOS mostri la tastiera.
@@ -140,7 +143,7 @@ export async function renderRecord(root, id) {
           .then((text) => { if (text) session.setEventText(ev, text); }),
       });
     },
-  }, h('span', { class: 'act-ico' }, '★'), 'Importante');
+  }, h('span', { class: 'act-ico' }, '★'), 'Importante', h('span', { class: 'key-hint', 'aria-hidden': 'true' }, 'I'));
 
   const stopBtn = h('button', {
     type: 'button',
@@ -170,14 +173,16 @@ export async function renderRecord(root, id) {
     const ps = session.meeting.participants;
     gridCount = ps.length;
     layoutGrid();
-    grid.replaceChildren(...ps.map((p) => {
+    grid.replaceChildren(...ps.map((p, i) => {
+      const key = KEYS[i];
       const b = h('button', {
         type: 'button',
         class: 'speaker-btn',
         style: { '--c': p.color, '--fg': textColorFor(p.color) },
         dataset: { id: p.id },
         'aria-pressed': 'false',
-      }, h('span', { class: 'speaker-name' }, p.name));
+        'aria-keyshortcuts': key,
+      }, key ? h('span', { class: 'key-hint', 'aria-hidden': 'true' }, key) : null, h('span', { class: 'speaker-name' }, p.name));
       // Il cambio avviene appena il dito tocca lo schermo, senza aspettare che si alzi:
       // pulsante, "Sta parlando" e testo in diretta passano subito alla nuova persona
       const select = (at) => {
@@ -351,12 +356,32 @@ export async function renderRecord(root, id) {
   tick();
   session.addEventListener('change', update);
   session.addEventListener('transcript', renderLive);
+  // Scorciatoie da tastiera (PC, tablet con tastiera): 1-9 e 0 = persone, N nota, I importante, Z annulla.
+  // Ignorate mentre si scrive o è aperta una finestra; la pressione è anche il "gesto" che serve al browser.
+  function onKey(e) {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || !session.active) return;
+    if (document.getElementById('modal')?.open) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName) || e.target?.isContentEditable) return;
+    const k = e.key.toLowerCase();
+    const i = KEYS.indexOf(k);
+    let btn = null;
+    if (i !== -1) btn = grid.children[i]?.matches('.speaker-btn') ? grid.children[i] : null;
+    else if (k === 'n') btn = noteBtn;
+    else if (k === 'i') btn = markBtn;
+    else if (k === 'z') btn = undoBtn;
+    if (!btn) return;
+    e.preventDefault();
+    btn.click();
+  }
+  document.addEventListener('keydown', onKey);
+
   const timer = setInterval(tick, 250);
   const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => layoutGrid()) : null;
   resize?.observe(grid);
   return () => {
     clearInterval(timer);
     resize?.disconnect();
+    document.removeEventListener('keydown', onKey);
     session.removeEventListener('change', update);
     session.removeEventListener('transcript', renderLive);
     document.body.classList.remove('recording');

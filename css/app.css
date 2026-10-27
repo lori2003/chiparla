@@ -396,3 +396,16 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 .backup-bad { color: var(--bad); font-weight: 600; }
 
 .topbar-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* scorciatoie da tastiera: i tasti si vedono solo dove c'è un mouse (PC), non sul telefono */
+.key-hint { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .key-hint {
+    display: inline-block; position: absolute; top: 6px; left: 20px;
+    min-width: 20px; padding: 0 5px; border-radius: 5px; border: 1px solid currentColor;
+    font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; opacity: .6;
+  }
+  .act { position: relative; }
+  .act .key-hint { left: auto; right: 6px; top: 4px; }
+}
+.groups .group-pill { font-weight: 600; }

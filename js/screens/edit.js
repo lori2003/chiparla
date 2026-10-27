@@ -47,7 +47,7 @@ export async function renderEdit(root, id) {
         h('a', { class: 'btn ghost small', href: `#/export/${id}` }, 'Esporta ›')),
       h('p', { class: 'muted small' },
         `${fmtDateTime(meeting.startedAt || meeting.createdAt)} · durata ${fmtTime(end)} · ${turns} interventi`),
-      safetyCard(),
+      ...[safetyCard()].filter(Boolean), // replaceChildren scriverebbe "null" come testo
       audioStatus());
     const info = speakerInfo(sorted, end);
     speechSpeaker = new Map(transcriptItems(events, segs).map((it) => [it.id, it.speakerId]));

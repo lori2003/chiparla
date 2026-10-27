@@ -124,3 +124,23 @@ export function splitNames(text) {
     .map((s) => s.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
 }
+
+// Elenco incollato da un verbale: una persona per riga (o separate da virgola/punto e virgola).
+// Toglie numerazione e punti elenco, ruoli tra parentesi o dopo un trattino/due punti:
+// "1. Mario Rossi – Presidente" → "Mario Rossi"; "• Bianchi Anna (Vicepresidente)" → "Bianchi Anna"
+export function parseNameList(text) {
+  const seen = new Set();
+  return splitNames(String(text ?? '').replace(/\r/g, ''))
+    .map((s) => s
+      .replace(/^\s*(?:\d+\s*[.)\-–]\s*|[-–•*·]\s*)/, '')
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .replace(/\s+[–—-]\s+.*$/, '')
+      .replace(/\s*:\s+.*$/, '')
+      .trim())
+    .filter((n) => {
+      const k = n.toLowerCase();
+      if (!n || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+}
