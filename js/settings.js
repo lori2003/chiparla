@@ -73,6 +73,7 @@ export const DEFAULT_GROUPS = Object.freeze([
     names: [
       'Finocchiaro Antonino', 'Innocente Enzo', 'Marchetti Lorenzo', 'Sassi Laura',
       'Sperindio Giancarlo', 'Tripodi Giuseppina', 'Attiani Alvaro', 'Vincenzi Bruna',
+      'Pagani Mario', 'Nigi Luigi',
     ],
   },
 ]);
