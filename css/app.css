@@ -266,7 +266,14 @@ textarea { resize: vertical; min-height: 96px; }
 .speaker-btn.active::after { content: "PARLA"; position: absolute; top: 6px; right: 10px; font-size: 11px; letter-spacing: .12em; opacity: .9; }
 .speaker-btn:active { transform: scale(.97); }
 .speaker-btn.pulse { animation: pulse .4s ease-out; }
-.speaker-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speaker-name {
+  /* "Cognome Nome": va a capo su due righe invece di essere troncato */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  line-height: 1.12; overflow-wrap: anywhere;
+}
+@media (max-width: 699px) {
+  .speaker-grid[data-cols="2"] .speaker-btn { font-size: clamp(16px, 5.2vw, 32px); padding-left: 18px; padding-right: 6px; }
+}
 .rec-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .act {
   min-height: 66px; border-radius: 14px; border: 1px solid #30343b; background: #16181c; color: #e9ecef;

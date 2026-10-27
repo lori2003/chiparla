@@ -67,7 +67,14 @@ const GROUPS_KEY = 'chiparla.groups.v1';
 // Gruppi già pronti nell'app. Se l'utente ne modifica uno, vale la sua versione (salvata sul telefono).
 // Un gruppo senza nomi chiede di incollare l'elenco al primo uso.
 export const DEFAULT_GROUPS = Object.freeze([
-  { name: 'Presidenza', names: [] },
+  {
+    // dal verbale della Presidenza (presenti e collegati a distanza)
+    name: 'Presidenza',
+    names: [
+      'Finocchiaro Antonino', 'Innocente Enzo', 'Marchetti Lorenzo', 'Sassi Laura',
+      'Sperindio Giancarlo', 'Tripodi Giuseppina', 'Attiani Alvaro', 'Vincenzi Bruna',
+    ],
+  },
 ]);
 
 function readGroups() {
