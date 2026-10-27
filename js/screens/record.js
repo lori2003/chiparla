@@ -169,8 +169,7 @@ export async function renderRecord(root, id) {
   function buildGrid() {
     const ps = session.meeting.participants;
     gridCount = ps.length;
-    const cols = ps.length <= 3 ? 1 : ps.length <= 8 ? 2 : 3;
-    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    layoutGrid();
     grid.replaceChildren(...ps.map((p) => {
       const b = h('button', {
         type: 'button',
@@ -208,6 +207,23 @@ export async function renderRecord(root, id) {
       });
       return b;
     }));
+  }
+
+  // Colonne: sul telefono come sempre (1-3); su schermi larghi (PC, tablet in orizzontale)
+  // nomi affiancati e tante colonne quante servono perché stiano tutti senza scorrere
+  function layoutGrid() {
+    const n = gridCount;
+    let cols = n <= 3 ? 1 : n <= 8 ? 2 : 3;
+    const w = grid.clientWidth;
+    if (w >= 700) {
+      if (n <= 3) cols = Math.max(1, n);
+      const maxCols = Math.max(cols, Math.min(6, Math.floor(w / 200)));
+      const rowsFit = Math.max(1, Math.floor((grid.clientHeight + 10) / 74)); // righe da almeno 64 px + spazio
+      while (cols < maxCols && Math.ceil(n / cols) > rowsFit) cols++;
+    }
+    const value = `repeat(${cols}, minmax(0, 1fr))`;
+    if (grid.style.gridTemplateColumns !== value) grid.style.gridTemplateColumns = value;
+    grid.dataset.cols = String(cols);
   }
 
   function update() {
@@ -336,8 +352,11 @@ export async function renderRecord(root, id) {
   session.addEventListener('change', update);
   session.addEventListener('transcript', renderLive);
   const timer = setInterval(tick, 250);
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => layoutGrid()) : null;
+  resize?.observe(grid);
   return () => {
     clearInterval(timer);
+    resize?.disconnect();
     session.removeEventListener('change', update);
     session.removeEventListener('transcript', renderLive);
     document.body.classList.remove('recording');

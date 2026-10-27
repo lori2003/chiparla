@@ -260,6 +260,8 @@ textarea { resize: vertical; min-height: 96px; }
   touch-action: manipulation; transition: transform .08s; /* colore istantaneo al cambio di chi parla */
 }
 .speaker-btn::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 12px; background: var(--c); }
+/* tante colonne su uno schermo stretto: testo più piccolo, così i nomi restano leggibili interi */
+.speaker-grid:is([data-cols="3"], [data-cols="4"]) .speaker-btn { font-size: clamp(15px, 4.4vw, 32px); padding-left: 18px; padding-right: 6px; }
 .speaker-btn.active { background: var(--c); color: var(--fg); box-shadow: 0 0 0 3px #fff; }
 .speaker-btn.active::after { content: "PARLA"; position: absolute; top: 6px; right: 10px; font-size: 11px; letter-spacing: .12em; opacity: .9; }
 .speaker-btn:active { transform: scale(.97); }
